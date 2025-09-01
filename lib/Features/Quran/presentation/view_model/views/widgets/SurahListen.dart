@@ -1,8 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../../../../../Core/Const/Colors.dart';
+import 'package:manarah/Core/Const/Colors.dart';
 import '../../States.dart';
 import '../../SurahCubit.dart';
 
@@ -56,22 +55,18 @@ class Surah extends StatelessWidget {
                   child: Builder(
                     builder: (context) {
                       if (state is SurahLoading) {
-                        return Center(
-                          child: CircularProgressIndicator(
-                            color: KprimaryColor,
-                          ),
+                        return const Center(
+                          child: CircularProgressIndicator(color: KprimaryColor),
                         );
                       } else if (state is SurahError) {
                         return Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(state.message,
-                                  style: TextStyle(fontSize: fontNormal)),
+                              Text(state.message, style: TextStyle(fontSize: fontNormal)),
                               const SizedBox(height: 10),
                               ElevatedButton(
-                                onPressed: () =>
-                                    context.read<SurahCubit>().fetchReciters(),
+                                onPressed: () => context.read<SurahCubit>().fetchReciters(),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: KprimaryColor,
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -79,12 +74,14 @@ class Surah extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: Text('إعادة المحاولة',
+                                child: Text(
+                                  'إعادة المحاولة',
                                   style: TextStyle(
                                     fontSize: fontNormal,
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
-                                ),),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -116,12 +113,22 @@ class Surah extends StatelessWidget {
                                 ),
                                 subtitle: Text(
                                   reciter['englishName'] ?? 'Unknown',
-                                  style: TextStyle(fontSize: fontNormal,
+                                  style: TextStyle(
+                                    fontSize: fontNormal,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white70,
                                   ),
                                 ),
-                                trailing: IconButton(
+                                trailing: state.isLoading && isPlaying
+                                    ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                    : IconButton(
                                   icon: Icon(
                                     (isPlaying && state.isPlaying)
                                         ? Icons.pause_circle_filled

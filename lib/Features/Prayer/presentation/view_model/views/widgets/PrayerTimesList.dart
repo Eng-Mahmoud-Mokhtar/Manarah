@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../../../Core/Const/Colors.dart';
 import '../../prayer_state.dart';
-import 'NextPrayerCountdownWithImage.dart';
+import 'formatTime.dart';
 
 Widget PrayerTimesList(
     BuildContext context,

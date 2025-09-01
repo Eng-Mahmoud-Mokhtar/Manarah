@@ -1,16 +1,17 @@
-import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'States.dart';
 
 class SurahCubit extends Cubit<SurahState> {
   final String surahId;
-
+  final Dio dio;
   late AudioPlayer _player;
   List<String> ayahAudioUrls = [];
 
-  SurahCubit({required this.surahId}) : super(SurahInitial()) {
+  SurahCubit({required this.surahId, Dio? dio})
+      : dio = dio ?? Dio(),
+        super(SurahInitial()) {
     _player = AudioPlayer();
     _listenPlayer();
     fetchReciters();
@@ -35,19 +36,12 @@ class SurahCubit extends Cubit<SurahState> {
       if (state is SurahLoaded) {
         final s = state as SurahLoaded;
 
-        // ✅ لو المشغل خلص السورة
         if (playerState.processingState == ProcessingState.completed) {
-          // سيبه واقف عند النهاية (ما ترجعهش صفر)
           emit(s.copyWith(
             isPlaying: false,
-            position: s.duration, // يقف على الآخر
+            isLoading: false,
+            position: s.duration,
           ));
-
-          // 🔁 لو حابب تعيد التشغيل تلقائي:
-          // await _player.seek(Duration.zero);
-          // await _player.play();
-          // emit(s.copyWith(isPlaying: true, position: Duration.zero));
-
           return;
         }
 
@@ -63,15 +57,17 @@ class SurahCubit extends Cubit<SurahState> {
   Future<void> fetchReciters() async {
     emit(SurahLoading());
     try {
-      final response = await http.get(Uri.parse('https://api.alquran.cloud/v1/edition?format=audio'))
+      final response = await dio
+          .get('https://api.alquran.cloud/v1/edition?format=audio')
           .timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = response.data;
         final reciters = List<Map<String, dynamic>>.from(data['data'])
             .where((reciter) =>
-        reciter['format'] == 'audio' &&
-            reciter['type'] == 'versebyverse')
+        reciter['format'] == 'audio' && reciter['type'] == 'versebyverse')
             .toList();
+
         emit(SurahLoaded(
           reciters: reciters,
           playingIndex: null,
@@ -92,8 +88,7 @@ class SurahCubit extends Cubit<SurahState> {
     final url =
         'https://cdn.alquran.cloud/media/audio/full/$editionIdentifier/$surahId.mp3';
     try {
-      final response =
-      await http.head(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      final response = await dio.head(url).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) return url;
       return null;
     } catch (_) {
@@ -103,12 +98,12 @@ class SurahCubit extends Cubit<SurahState> {
 
   Future<List<String>> getAyahAudioUrls(String editionIdentifier) async {
     try {
-      final response = await http
-          .get(Uri.parse(
-          'https://api.alquran.cloud/v1/surah/$surahId/$editionIdentifier'))
+      final response = await dio
+          .get('https://api.alquran.cloud/v1/surah/$surahId/$editionIdentifier')
           .timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = response.data;
         final ayahs = data['data']['ayahs'] as List;
         return ayahs.map<String>((ayah) => ayah['audio'] as String).toList();
       } else {
@@ -124,7 +119,6 @@ class SurahCubit extends Cubit<SurahState> {
       if (state is SurahLoaded) {
         final s = state as SurahLoaded;
 
-        // لو ضغطت على نفس الشيخ الحالي
         if (s.playingIndex == index) {
           if (s.isPlaying) {
             await _player.pause();
@@ -136,15 +130,14 @@ class SurahCubit extends Cubit<SurahState> {
           return;
         }
 
-        // ✅ وقف أي تشغيل سابق
         await _player.stop();
 
         emit(s.copyWith(
           isLoading: true,
           playingIndex: index,
+          isPlaying: false,
           duration: Duration.zero,
           position: Duration.zero,
-          isPlaying: false,
         ));
 
         String? fullSurahUrl = await getFullSurahAudioUrl(editionIdentifier);
@@ -162,18 +155,15 @@ class SurahCubit extends Cubit<SurahState> {
           );
         }
 
-        // 🔹 هنا مش محتاج تستدعي load() تاني
-        final totalDuration = _player.duration;
-
         emit(s.copyWith(
-          duration: totalDuration ?? Duration.zero,
-          position: Duration.zero,
           isLoading: false,
+          isPlaying: true,
           playingIndex: index,
+          duration: _player.duration ?? Duration.zero,
+          position: Duration.zero,
         ));
 
         await _player.play();
-        emit(s.copyWith(isPlaying: true));
       }
     } catch (e) {
       if (state is SurahLoaded) {
@@ -191,6 +181,7 @@ class SurahCubit extends Cubit<SurahState> {
     _player.stop();
     _player.dispose();
   }
+
   @override
   Future<void> close() {
     _player.dispose();

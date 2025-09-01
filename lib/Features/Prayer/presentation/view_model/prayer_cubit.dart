@@ -1,11 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:manarah/Features/Prayer/presentation/view_model/prayer_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PrayerCubit extends Cubit<PrayerState> {
   final Dio dio;
@@ -30,7 +32,8 @@ class PrayerCubit extends Cubit<PrayerState> {
       if (hasConnection) {
         await getPrayerTimes();
       } else {
-        emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت'));
+        // إذا لم يكن هناك اتصال، نحاول تحميل البيانات المخزنة
+        _loadCachedData();
       }
     });
   }
@@ -46,6 +49,28 @@ class PrayerCubit extends Cubit<PrayerState> {
     });
   }
 
+  // تحميل البيانات المخزنة
+  Future<void> _loadCachedData() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final cachedData = prefs.getString('prayer_times_data');
+      final cachedDate = prefs.getString('prayer_times_date');
+
+      if (cachedData != null && cachedDate != null) {
+        final Map<String, dynamic> data = json.decode(cachedData);
+        final Map<String, String> prayerTimes = Map<String, String>.from(data['prayerTimes']);
+        final String city = data['city'];
+        final String country = data['country'];
+
+        emit(PrayerLoaded(prayerTimes: prayerTimes, city: city, country: country));
+      } else {
+        emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت ولا توجد بيانات مخزنة'));
+      }
+    } catch (e) {
+      emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت'));
+    }
+  }
+
   // التحقق مما إذا تم عرض رسالة الإذن من قبل
   Future<bool> _hasShownPermissionDialog() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -58,6 +83,16 @@ class PrayerCubit extends Cubit<PrayerState> {
     await prefs.setBool('has_shown_permission_dialog', true);
   }
 
+  // دالة لتعيين البيانات المخزنة
+  void setCachedData(Map<String, String> prayerTimes, String city, String country) {
+    emit(PrayerLoaded(prayerTimes: prayerTimes, city: city, country: country));
+  }
+
+  // دالة لتعيين حالة الخطأ
+  void setErrorState(String message) {
+    emit(PrayerError(message: message));
+  }
+
   // جلب أوقات الصلاة
   Future<void> getPrayerTimes() async {
     try {
@@ -68,7 +103,7 @@ class PrayerCubit extends Cubit<PrayerState> {
       final hasConnection = connectivityResult.any((result) =>
       result == ConnectivityResult.mobile || result == ConnectivityResult.wifi);
       if (!hasConnection) {
-        emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت'));
+        await _loadCachedData();
         return;
       }
 
@@ -158,10 +193,10 @@ class PrayerCubit extends Cubit<PrayerState> {
           country: country,
         ));
       } else {
-        emit(const PrayerError(message: 'يرجى المحاولة مرة أخرى'));
+        await _loadCachedData();
       }
     } catch (e) {
-      emit(const PrayerError(message: 'يرجى المحاولة مرة أخرى'));
+      await _loadCachedData();
     }
   }
 

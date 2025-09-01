@@ -1,145 +1,152 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_qiblah/flutter_qiblah.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../../Core/Const/Colors.dart';
+import '../../../../../Core/Const/permission.dart';
 import '../../../../Home/presentation/view_model/views/Home.dart';
-import 'qiblah_compass.dart';
-import 'package:manarah/Features/Qubla/presentation/view_model/views/widgets/loading_indicator.dart';
 
 class Qiblah extends StatefulWidget {
   const Qiblah({super.key});
 
   @override
-  _QiblahState createState() => _QiblahState();
+  State<Qiblah> createState() => _QiblahState();
 }
 
-class _QiblahState extends State<Qiblah> {
-  late final Future<bool?> _deviceSupport;
-  bool _hasLocationPermission = false;
+class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
+  bool permissionGranted = false;
+  bool sensorSupported = true;
 
   @override
   void initState() {
     super.initState();
-    _deviceSupport = FlutterQiblah.androidDeviceSensorSupport();
-    _requestPermission();
+    WidgetsBinding.instance.addObserver(this);
+    _checkPermissions();
+    _initSensorSupport();
   }
 
-  Future<void> _requestPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      debugPrint('Location services are disabled.');
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      debugPrint('Location permission denied forever!');
-      return;
-    }
-
-    if (permission == LocationPermission.always ||
-        permission == LocationPermission.whileInUse) {
+  Future<void> _checkPermissions() async {
+    // استخدام PermissionManager لطلب أذونات الموقع
+    final granted = await PermissionManager.requestPermissions();
+    if (mounted) {
       setState(() {
-        _hasLocationPermission = true;
+        permissionGranted = granted;
       });
+    }
+  }
+
+  void _initSensorSupport() {
+    FlutterQiblah.androidDeviceSensorSupport().then((support) {
+      if (mounted) {
+        setState(() => sensorSupported = support!);
+      }
+    }).catchError((_) {
+      if (mounted) setState(() => sensorSupported = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // إعادة التحقق من الإذن عند عودة التطبيق
+      _checkPermissions();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final fontNormal = MediaQuery.of(context).size.width * 0.025;
     final width = MediaQuery.of(context).size.width;
     final fontBig = width * 0.04;
     final iconSize = width * 0.05;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFFB2EBF2), Color(0xFF80DEEA)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        image: DecorationImage(
-          image: AssetImage('Assets/Login.png'), 
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: KprimaryColor,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back_ios_new,
-                color: Colors.white, size: iconSize),
-            onPressed: () {
-              context.read<BottomNavCubit>().setIndex(0);
-            },
-          ),
-          title: Text(
-            'القبلة',
-            style: TextStyle(
-              fontSize: fontBig,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          centerTitle: false,
-        ),
-        body: _hasLocationPermission
-            ? FutureBuilder<bool?>(
-          future: _deviceSupport,
-          builder: (_, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return LoadingIndicator();
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text("Error: ${snapshot.error}"));
-            }
-            if (snapshot.data ?? false) {
-              return QiblahCompass();
-            } else {
-              return Center(
-                child: Text(
-                  "الهاتف لا يدعم استشعار البوصله",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: fontNormal,
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              );
-            }
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: KprimaryColor,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new, color: Colors.white, size: iconSize),
+          onPressed: () {
+            context.read<BottomNavCubit>().setIndex(0);
           },
-        )
-            : Center(
-          child: ElevatedButton(
-            onPressed: _requestPermission,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: KprimaryColor,
-              padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              "تفعيل صلاحية الموقع",
-              style: TextStyle(
-                fontSize: fontNormal,
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+        ),
+        title: Text(
+          'القبلة',
+          style: TextStyle(fontSize: fontBig, color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: false,
+      ),
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('Assets/Login.png'),
+                fit: BoxFit.cover,
               ),
             ),
           ),
-        ),
+          Center(
+            child: !permissionGranted
+                ? Text('برجاء تفعيل موقع الجهاز', style: TextStyle(fontSize: fontBig))
+                : !sensorSupported
+                ? Text("الجهاز لا يدعم البوصلة", style: TextStyle(fontSize: fontBig))
+                : const QiblahCompassWidget(),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class QiblahCompassWidget extends StatelessWidget {
+  const QiblahCompassWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final compassSize = width * 0.8;
+    final needleSize = width * 0.8;
+
+    return StreamBuilder<QiblahDirection>(
+      stream: FlutterQiblah.qiblahStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: KprimaryColor),
+              const SizedBox(height: 20),
+              Text('جاري تهيئة التطبيق', style: TextStyle(fontSize: width * 0.04)),
+            ],
+          );
+        }
+
+        final direction = snapshot.data!;
+
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            SvgPicture.asset(
+              'Assets/compass.svg',
+              width: compassSize,
+              height: compassSize,
+            ),
+            Transform.rotate(
+              angle: -direction.qiblah * 3.141592653589793 / 180,
+              child: SvgPicture.asset(
+                'Assets/needle.svg',
+                width: needleSize,
+                height: needleSize,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

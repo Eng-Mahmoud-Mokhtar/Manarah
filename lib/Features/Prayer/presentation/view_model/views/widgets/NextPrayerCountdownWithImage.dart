@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../PrayerTimes.dart';
 
 class NextPrayerCountdownWithImage extends StatefulWidget {
   final Map<String, String> prayerTimes;
@@ -26,6 +25,7 @@ class _NextPrayerCountdownWithImageState
   Timer? _timer;
   Duration _remainingTime = Duration.zero;
   String _nextPrayer = '';
+
   final Map<String, String> arabicNames = {
     'Fajr': 'الفجر',
     'Dhuhr': 'الظهر',
@@ -38,6 +38,7 @@ class _NextPrayerCountdownWithImageState
   void initState() {
     super.initState();
     _calculateNextPrayer();
+
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
         _calculateNextPrayer();
@@ -54,62 +55,42 @@ class _NextPrayerCountdownWithImageState
   void _calculateNextPrayer() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    List<DateTime> prayerDateTimes = [];
     final prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+    DateTime? nextPrayerTime;
+    String nextPrayerName = '';
 
     for (var prayer in prayers) {
       final timeStr = widget.prayerTimes[prayer];
       if (timeStr != null) {
-        try {
-          final cleanedTime = formatTime(timeStr);
-          final parts = cleanedTime.split(':');
-          final hour = int.parse(parts[0]);
-          final minute = int.parse(parts[1]);
-          prayerDateTimes.add(
-            today.add(Duration(hours: hour, minutes: minute)),
-          );
-        } catch (e) {
-          print('Error parsing time for $prayer: $e');
+        final parts = timeStr.split(':');
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        DateTime prayerTime = today.add(Duration(hours: hour, minutes: minute));
+
+        // إذا الصلاة مضت اليوم، نضيف يوم
+        if (prayerTime.isBefore(now)) {
+          prayerTime = prayerTime.add(const Duration(days: 1));
+        }
+
+        if (nextPrayerTime == null || prayerTime.isBefore(nextPrayerTime)) {
+          nextPrayerTime = prayerTime;
+          nextPrayerName = prayer;
         }
       }
     }
 
-    if (prayerDateTimes.isEmpty) {
-      _nextPrayer = '';
-      _remainingTime = Duration.zero;
-      return;
+    if (nextPrayerTime != null) {
+      _nextPrayer = nextPrayerName;
+      _remainingTime = nextPrayerTime.difference(now);
     }
-
-    prayerDateTimes.sort();
-    DateTime next = prayerDateTimes.firstWhere(
-          (dt) => dt.isAfter(now),
-      orElse: () {
-        final fajrTimeStr = widget.prayerTimes['Fajr'] ?? '05:00';
-        final cleanedTime = formatTime(fajrTimeStr);
-        final parts = cleanedTime.split(':');
-        final hour = int.parse(parts[0]);
-        final minute = int.parse(parts[1]);
-        return today.add(Duration(days: 1, hours: hour, minutes: minute));
-      },
-    );
-
-    _remainingTime = next.difference(now);
-
-    String nextPrayerKey;
-    if (next.day == today.day) {
-      int index = prayerDateTimes.indexWhere((dt) => dt.isAtSameMomentAs(next));
-      nextPrayerKey = prayers[index];
-    } else {
-      nextPrayerKey = 'Fajr';
-    }
-    _nextPrayer = nextPrayerKey;
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: widget.height,
+      height: widget.height / 2,
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: Stack(
@@ -149,8 +130,4 @@ class _NextPrayerCountdownWithImageState
       ),
     );
   }
-}
-String formatTime(String time) {
-  final cleanedTime = time.split(' ')[0];
-  return cleanedTime;
 }

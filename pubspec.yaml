@@ -13,7 +13,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_bloc: ^8.1.3
   hijri: ^3.0.0
-  intl: ^0.19.0
+  intl: ^0.20.2
   geolocator: ^13.0.4
   image_picker: ^0.8.7+5
   geocoding: ^3.0.0
@@ -22,7 +22,6 @@ dependencies:
   flutter_qiblah: ^3.0.0
   flutter_svg: ^2.0.0
   path_provider:
-  flutter_pdfview:
   google_maps_flutter: ^2.3.0
   shared_preferences: ^2.3.2
   connectivity_plus:
@@ -30,6 +29,13 @@ dependencies:
   device_preview: ^1.1.0
   flutter_native_splash:
   just_audio:
+  audioplayers: ^6.0.0
+  permission_handler:
+  device_info_plus:
+  flutter_background_service:
+  flutter_local_notifications: ^17.2.2
+  android_alarm_manager_plus:
+  timezone:
 flutter_native_splash:
   color: "#203AA2"
 dev_dependencies:
@@ -41,9 +47,7 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "Assets/Frame 249.png"
-  background_color: "#152216"
-  adaptive_icon_background: "#152216"
+  image_path: "Assets/Screenshot (65).png"
   min_sdk_android: 21
 
 flutter:
@@ -51,6 +55,9 @@ flutter:
   assets:
     - Assets/
     - Assets/data.json
+    - Assets/audio/مشاري ابن راشد.mp3
+
+
   fonts:
     - family: Almarai
       fonts:

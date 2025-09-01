@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:manarah/Features/Home/presentation/view_model/views/widgets/HomeBody.dart';
-import '../../../../../Core/Const/Colors.dart';
 import '../../../../Azkar/presentation/view_model/views/Azkar.dart';
 import '../../../../Prayer/presentation/view_model/views/PrayerTimes.dart';
 import '../../../../Qubla/presentation/view_model/views/Qubla.dart';
+import '../../../../../Core/Const/Colors.dart';
 
+
+// ---------------- BottomNavCubit ----------------
 class BottomNavCubit extends Cubit<int> {
-  BottomNavCubit() : super(0);
-  void setIndex(int index) => emit(index);
+  BottomNavCubit({required int initialIndex}) : super(initialIndex);
+
+  void setIndex(int index) async {
+    emit(index);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_page', index);
+  }
 }
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
+
     return Scaffold(
       body: BlocBuilder<BottomNavCubit, int>(
         builder: (context, currentIndex) {
@@ -100,3 +110,4 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
