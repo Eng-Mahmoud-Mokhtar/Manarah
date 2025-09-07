@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:manarah/Features/Azkar/presentation/view_model/views/AzkarDetailPage.dart';
 import 'package:manarah/Features/Azkar/presentation/view_model/views/widgets/AzkarDialogs.dart';
 import 'package:manarah/Features/Azkar/presentation/view_model/views/widgets/azkarSections.dart';
-import 'package:manarah/Features/Home/presentation/view_model/views/Home.dart';
+import 'package:manarah/Features/Home/presentation/view_model/views/widgets/BottomBar.dart';
 import '../../../../../Core/Const/Colors.dart';
 import '../azkar_cubit.dart';
 
@@ -74,13 +74,17 @@ class AzkarPage extends StatelessWidget {
                 Expanded(
                   child: BlocBuilder<AzkarCubit, List<Map<String, dynamic>>>(
                     builder: (context, userAzkarSections) {
-                      final allAzkarSections = [...azkarSections, ...userAzkarSections];
+                      final allAzkarSections = [
+                        ...azkarSections,
+                        ...userAzkarSections
+                      ];
                       return ListView.builder(
                         padding: EdgeInsets.all(width * 0.04),
                         itemCount: allAzkarSections.length,
                         itemBuilder: (context, index) {
                           final section = allAzkarSections[index];
-                          final isUserSection = index >= azkarSections.length;
+                          final isUserSection =
+                              index >= azkarSections.length;
                           return GestureDetector(
                             onTap: () {
                               Navigator.push(
@@ -88,14 +92,17 @@ class AzkarPage extends StatelessWidget {
                                 MaterialPageRoute(
                                   builder: (_) => AzkarDetailPage(
                                     title: section['title'],
-                                    azkarList: List<Map<String, dynamic>>.from(section['data']),
+                                    azkarList:
+                                    List<Map<String, dynamic>>.from(
+                                        section['data']),
                                   ),
                                 ),
                               );
                             },
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 16),
-                              padding: EdgeInsets.symmetric(horizontal: width * 0.04),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: width * 0.04),
                               decoration: BoxDecoration(
                                 color: KprimaryColor,
                                 borderRadius: BorderRadius.circular(12),
@@ -108,7 +115,8 @@ class AzkarPage extends StatelessWidget {
                                 ],
                               ),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
                                 children: [
                                   Expanded(
                                     child: Text(
@@ -127,11 +135,14 @@ class AzkarPage extends StatelessWidget {
                                         ? () {
                                       context
                                           .read<AzkarCubit>()
-                                          .removeAzkarSection(index - azkarSections.length);
+                                          .removeAzkarSection(index -
+                                          azkarSections.length);
                                     }
                                         : null,
                                     icon: Icon(
-                                      isUserSection ? Icons.delete : Icons.arrow_forward_ios,
+                                      isUserSection
+                                          ? Icons.delete
+                                          : Icons.arrow_forward_ios,
                                       size: fontBig,
                                       color: Colors.white,
                                     ),
@@ -153,3 +164,4 @@ class AzkarPage extends StatelessWidget {
     );
   }
 }
+

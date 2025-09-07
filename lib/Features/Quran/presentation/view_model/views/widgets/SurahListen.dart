@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:manarah/Core/Const/Colors.dart';
@@ -56,20 +55,25 @@ class Surah extends StatelessWidget {
                     builder: (context) {
                       if (state is SurahLoading) {
                         return const Center(
-                          child: CircularProgressIndicator(color: KprimaryColor),
+                          child: CircularProgressIndicator(
+                              color: KprimaryColor),
                         );
                       } else if (state is SurahError) {
                         return Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(state.message, style: TextStyle(fontSize: fontNormal)),
+                              Text(state.message,
+                                  style: TextStyle(fontSize: fontNormal)),
                               const SizedBox(height: 10),
                               ElevatedButton(
-                                onPressed: () => context.read<SurahCubit>().fetchReciters(),
+                                onPressed: () => context
+                                    .read<SurahCubit>()
+                                    .fetchReciters(),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: KprimaryColor,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 12),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),

@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.manarah">
 
-    <!-- الصلاحيات -->
+    <!-- صلاحيات التطبيق -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
@@ -18,18 +18,19 @@
         android:label="منارة"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:hardwareAccelerated="true">
+        android:hardwareAccelerated="true"
+        android:usesCleartextTraffic="true">
 
         <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="YOUR_API_KEY_HERE"/>
 
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
@@ -44,12 +45,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Flutter Embedding -->
+        <!-- Flutter Embedding v2 -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Foreground service بتاع WorkManager -->
+        <!-- Foreground service لـ WorkManager -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:exported="false" />
@@ -58,7 +59,12 @@
         <service
             android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
             android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="true"/>
+            android:exported="false"/>
+
+        <!-- BroadcastReceiver الأساسي لاستقبال المنبه -->
+        <receiver
+            android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver"
+            android:exported="false" />
 
         <!-- BroadcastReceiver لإعادة جدولة المنبهات بعد إعادة التشغيل -->
         <receiver
@@ -78,6 +84,7 @@
             android:foregroundServiceType="mediaPlayback"/>
     </application>
 
+    <!-- Queries للتوافق مع Intent -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

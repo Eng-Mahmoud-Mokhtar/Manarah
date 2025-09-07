@@ -244,7 +244,7 @@ final List<Map<String, dynamic>> azkarSections = const [
     ],
   },
   {
-    'title': 'أذكار دخول المنزل والخروج منه',
+    'title': 'أذكار دخول و خروج المنزل',
     'data': [
       {
         'text':

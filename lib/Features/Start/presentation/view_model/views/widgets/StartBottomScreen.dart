@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../../Core/Const/Colors.dart';
-import '../../../../../Home/presentation/view_model/views/Home.dart';
+import '../../../../../Home/presentation/view_model/views/widgets/BottomBar.dart';
 
 class StartBottomScreen extends StatelessWidget {
   final Size size;
@@ -53,7 +53,7 @@ class StartBottomScreen extends StatelessWidget {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => HomeScreen()));
+                          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => BottomBar()));
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: KprimaryColor,

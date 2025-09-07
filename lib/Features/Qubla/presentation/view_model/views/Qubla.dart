@@ -1,10 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_qiblah/flutter_qiblah.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../../Core/Const/Colors.dart';
 import '../../../../../Core/Const/permission.dart';
-import '../../../../Home/presentation/view_model/views/Home.dart';
+import '../../../../Home/presentation/view_model/views/widgets/BottomBar.dart';
 
 class Qiblah extends StatefulWidget {
   const Qiblah({super.key});
@@ -16,6 +17,8 @@ class Qiblah extends StatefulWidget {
 class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
   bool permissionGranted = false;
   bool sensorSupported = true;
+  QiblahDirection? _direction;
+  StreamSubscription<QiblahDirection>? _subscription;
 
   @override
   void initState() {
@@ -26,27 +29,52 @@ class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
   }
 
   Future<void> _checkPermissions() async {
-    // استخدام PermissionManager لطلب أذونات الموقع
     final granted = await PermissionManager.requestPermissions();
     if (mounted) {
       setState(() {
         permissionGranted = granted;
       });
+      _updateStream();
     }
   }
 
   void _initSensorSupport() {
     FlutterQiblah.androidDeviceSensorSupport().then((support) {
       if (mounted) {
-        setState(() => sensorSupported = support!);
+        sensorSupported = support ?? false;
+        setState(() {});
+        _updateStream();
       }
     }).catchError((_) {
-      if (mounted) setState(() => sensorSupported = false);
+      if (mounted) {
+        sensorSupported = false;
+        setState(() {});
+      }
     });
+  }
+
+  void _updateStream() {
+    _subscription?.cancel();
+    _direction = null;
+
+    if (permissionGranted && sensorSupported) {
+      _subscription = FlutterQiblah.qiblahStream.listen((dir) {
+        if (mounted) {
+          setState(() {
+            // فلترة بسيطة لتقليل الاهتزازات
+            if (_direction == null ||
+                (dir.qiblah - _direction!.qiblah).abs() > 0.5) {
+              _direction = dir;
+            }
+          });
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _subscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -54,8 +82,9 @@ class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // إعادة التحقق من الإذن عند عودة التطبيق
       _checkPermissions();
+    } else if (state == AppLifecycleState.paused) {
+      _subscription?.pause();
     }
   }
 
@@ -64,6 +93,7 @@ class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
     final width = MediaQuery.of(context).size.width;
     final fontBig = width * 0.04;
     final iconSize = width * 0.05;
+    final compassSize = width * 0.8;
 
     return Scaffold(
       appBar: AppBar(
@@ -95,58 +125,36 @@ class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
                 ? Text('برجاء تفعيل موقع الجهاز', style: TextStyle(fontSize: fontBig))
                 : !sensorSupported
                 ? Text("الجهاز لا يدعم البوصلة", style: TextStyle(fontSize: fontBig))
-                : const QiblahCompassWidget(),
+                : (_direction == null
+                ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: KprimaryColor),
+                const SizedBox(height: 20),
+                Text('جاري تهيئة التطبيق', style: TextStyle(fontSize: fontBig)),
+              ],
+            )
+                : Stack(
+              alignment: Alignment.center,
+              children: [
+                SvgPicture.asset(
+                  'Assets/compass.svg',
+                  width: compassSize,
+                  height: compassSize,
+                ),
+                Transform.rotate(
+                  angle: -_direction!.qiblah * 3.141592653589793 / 180,
+                  child: SvgPicture.asset(
+                    'Assets/needle.svg',
+                    width: compassSize,
+                    height: compassSize,
+                  ),
+                ),
+              ],
+            )),
           ),
         ],
       ),
-    );
-  }
-}
-
-class QiblahCompassWidget extends StatelessWidget {
-  const QiblahCompassWidget({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final compassSize = width * 0.8;
-    final needleSize = width * 0.8;
-
-    return StreamBuilder<QiblahDirection>(
-      stream: FlutterQiblah.qiblahStream,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: KprimaryColor),
-              const SizedBox(height: 20),
-              Text('جاري تهيئة التطبيق', style: TextStyle(fontSize: width * 0.04)),
-            ],
-          );
-        }
-
-        final direction = snapshot.data!;
-
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            SvgPicture.asset(
-              'Assets/compass.svg',
-              width: compassSize,
-              height: compassSize,
-            ),
-            Transform.rotate(
-              angle: -direction.qiblah * 3.141592653589793 / 180,
-              child: SvgPicture.asset(
-                'Assets/needle.svg',
-                width: needleSize,
-                height: needleSize,
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

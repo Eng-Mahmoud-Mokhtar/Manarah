@@ -4,21 +4,69 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/timezone.dart' as tz;
-import 'package:timezone/data/latest.dart' as tzdata;
-import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:just_audio/just_audio.dart';
+
 import '../../../../../Core/Const/Colors.dart';
-import '../../../../../Core/Const/permission.dart';
-import '../../../../Home/presentation/view_model/views/Home.dart';
+import '../../../../Home/presentation/view_model/views/widgets/BottomBar.dart';
 import '../../../../Prayer/presentation/view_model/prayer_cubit.dart';
 import '../../../../Prayer/presentation/view_model/prayer_state.dart';
 import 'widgets/NextPrayerCountdownWithImage.dart';
 import 'widgets/PrayerTimesList.dart';
 
+// ==========================
+// Foreground Task Handler
+// ==========================
+class AdhanTaskHandler extends TaskHandler {
+  static String? adhanFilePath;
+  late final AudioPlayer _player;
+
+  @override
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    if (adhanFilePath == null) return;
+    _player = AudioPlayer();
+    try {
+      await _player.setFilePath(adhanFilePath!);
+      await _player.play();
+      _player.playerStateStream.listen((state) async {
+        if (state.processingState == ProcessingState.completed) {
+          await _player.dispose();
+          FlutterForegroundTask.stopService();
+        }
+      });
+    } catch (e) {
+      print('[ERROR] تشغيل الأذان في الخلفية: $e');
+    }
+  }
+
+  @override
+  void onRepeatEvent(DateTime timestamp) {}
+
+  @override
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    await _player.stop();
+    await _player.dispose();
+  }
+}
+
+// ==========================
+// Background entry-point
+// ==========================
+@pragma('vm:entry-point')
+void adhanAlarmCallback() {
+  FlutterForegroundTask.startService(
+    notificationTitle: 'الأذان',
+    notificationText: 'حان وقت الصلاة',
+    callback: () => AdhanTaskHandler(),
+  );
+}
+
+// ==========================
+// PrayerTimes Widget
+// ==========================
 class PrayerTimes extends StatefulWidget {
   const PrayerTimes({super.key});
 
@@ -26,125 +74,81 @@ class PrayerTimes extends StatefulWidget {
   State<PrayerTimes> createState() => _PrayerTimesState();
 }
 
-class _PrayerTimesState extends State<PrayerTimes> with WidgetsBindingObserver {
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+class _PrayerTimesState extends State<PrayerTimes> {
   SharedPreferences? _prefs;
-  bool _permissionsGranted = false;
-  bool _prayersScheduledToday = false;
-  File? _adhanFile;
-  Timer? _foregroundTimer;
-
-  static const String _adhanChannelId = 'adhan_channel';
-  static const String _adhanChannelName = 'Adhan';
-  static const String _reminderChannelId = 'reminders_channel';
-  static const String _reminderChannelName = 'Reminders';
+  Timer? _prayerTimer;
+  Map<String, bool> _adhanPlayedToday = {};
+  static String? adhanFilePathForeground;
+  static AudioPlayer? _foregroundPlayer;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _initSharedPreferences();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeEverything();
+    _initAll();
+  }
+
+  Future<void> _initAll() async {
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      await _prepareAdhanFile();
+      await _loadCachedPrayerTimes();
+      await _fetchNewPrayerTimes();
+      _startPrayerChecker();
+      _resetAdhanFlagsDaily();
+      await AndroidAlarmManager.initialize();
+    } catch (e) {
+      print('[ERROR] فشل تهيئة أوقات الصلاة: $e');
+    }
+  }
+
+  Future<void> _prepareAdhanFile() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/azan.mp3');
+      if (!await file.exists()) {
+        final byteData = await rootBundle.load('Assets/audio/azan.mp3');
+        await file.writeAsBytes(byteData.buffer.asUint8List());
+      }
+      adhanFilePathForeground = file.path;
+      AdhanTaskHandler.adhanFilePath = file.path;
+      print('[INFO] تم تحضير ملف الأذان');
+    } catch (e) {
+      print('[ERROR] فشل تحضير ملف الأذان: $e');
+    }
+  }
+
+  void scheduleAllPrayers(Map<String, String> prayerTimes) {
+    final now = DateTime.now();
+    int id = 1;
+
+    prayerTimes.forEach((prayer, time) {
+      final parts = time.split(':');
+      if (parts.length != 2) return;
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+      if (hour == null || minute == null) return;
+
+      DateTime prayerDateTime = DateTime(now.year, now.month, now.day, hour, minute);
+      if (prayerDateTime.isBefore(now)) {
+        prayerDateTime = prayerDateTime.add(const Duration(days: 1));
+      }
+
+      AndroidAlarmManager.oneShotAt(
+        prayerDateTime,
+        id,
+        adhanAlarmCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+      );
+      id++;
     });
   }
 
-  Future<void> _initSharedPreferences() async {
-    _prefs = await SharedPreferences.getInstance();
-    await _loadCachedPrayerTimes();
-  }
-
-  Future<void> _initializeEverything() async {
-    try {
-      await AndroidAlarmManager.initialize();
-      tzdata.initializeTimeZones();
-      tz.setLocalLocation(tz.getLocation(_getSafeTimeZoneName()));
-
-      _permissionsGranted = await PermissionManager.requestPermissions();
-      if (!_permissionsGranted) {
-        print('⚠️ Permissions not granted. Notifications and alarms will not work.');
-        return;
-      }
-
-      await _initializeNotifications();
-      await _getAdhanFile(); // تحميل ملف الأذان
-      _fetchNewPrayerTimes();
-    } catch (e) {
-      print('[INIT] error: $e');
-    }
-  }
-
-  String _getSafeTimeZoneName() {
-    final systemTz = DateTime.now().timeZoneName;
-    const map = {
-      'EET': 'Africa/Cairo',
-      'UTC': 'UTC',
-      'GMT': 'Etc/GMT',
-      'PST': 'America/Los_Angeles',
-      'EST': 'America/New_York',
-    };
-    return map[systemTz] ?? 'UTC';
-  }
-
-  Future<void> _initializeNotifications() async {
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.requestNotificationsPermission();
-
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidInit);
-    await _notifications.initialize(initSettings);
-
-    await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        _reminderChannelId,
-        _reminderChannelName,
-        description: 'Reminders before prayer time',
-        importance: Importance.high,
-        playSound: false,
-      ),
-    );
-
-    await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        _adhanChannelId,
-        _adhanChannelName,
-        description: 'Azan playback at prayer time',
-        importance: Importance.max,
-        playSound: true,
-        sound: RawResourceAndroidNotificationSound('mqa'),
-      ),
-    );
-
-    print('[NOTIF] Notification channels created successfully');
-  }
-
-  Future<File?> _getAdhanFile() async {
-    if (_adhanFile != null && await _adhanFile!.exists()) return _adhanFile;
-    try {
-      final byteData = await rootBundle.load('Assets/mqa.mp3');
-      final file = File('${(await getTemporaryDirectory()).path}/mqa.mp3');
-      await file.writeAsBytes(byteData.buffer.asUint8List());
-      _adhanFile = file;
-      print('[AUDIO] Adhan file ready at ${file.path}');
-      return file;
-    } catch (e) {
-      print('[AUDIO] Error loading adhan file: $e');
-      return null;
-    }
-  }
-
   Future<void> _loadCachedPrayerTimes() async {
-    if (_prefs == null) return;
-    final cachedData = _prefs!.getString('prayer_times_data');
-    final cachedDate = _prefs!.getString('prayer_times_date');
-    if (cachedData != null && cachedDate != null) {
-      final cachedDateTime = DateTime.tryParse(cachedDate);
-      final now = DateTime.now();
-      if (cachedDateTime != null &&
-          cachedDateTime.year == now.year &&
-          cachedDateTime.month == now.month &&
-          cachedDateTime.day == now.day) {
+    try {
+      final cachedData = _prefs?.getString('prayer_times_data');
+      if (cachedData != null) {
         final Map<String, dynamic> data = json.decode(cachedData);
         final Map<String, String> prayerTimes = Map<String, String>.from(data['prayerTimes']);
         final String city = data['city'];
@@ -152,251 +156,95 @@ class _PrayerTimesState extends State<PrayerTimes> with WidgetsBindingObserver {
         if (mounted) {
           context.read<PrayerCubit>().setCachedData(prayerTimes, city, country);
         }
-        await _scheduleAllPrayers(prayerTimes);
-        _startForegroundTimer(prayerTimes);
-        _printStoredPrayerTimes();
       }
+    } catch (e) {
+      print('[ERROR] فشل تحميل أوقات الصلاة المخزنة: $e');
     }
   }
 
   Future<void> _fetchNewPrayerTimes() async {
     try {
       await context.read<PrayerCubit>().getPrayerTimes();
-    } catch (e) {
-      print('[API] error: $e');
-      final cachedData = _prefs?.getString('prayer_times_data');
-      if (cachedData == null && mounted) {
-        context.read<PrayerCubit>().setErrorState("لا يوجد اتصال بالإنترنت");
+      final state = context.read<PrayerCubit>().state;
+      if (state is PrayerLoaded) {
+        await _cachePrayerTimes(state.prayerTimes, state.city, state.country);
+        scheduleAllPrayers(state.prayerTimes);
       }
+    } catch (e) {
+      print('[ERROR] فشل جلب أوقات الصلاة الجديدة: $e');
     }
   }
 
   Future<void> _cachePrayerTimes(Map<String, String> prayerTimes, String city, String country) async {
-    if (_prefs == null) return;
-    final data = {'prayerTimes': prayerTimes, 'city': city, 'country': country};
-    await _prefs!.setString('prayer_times_data', json.encode(data));
-    await _prefs!.setString('prayer_times_date', DateTime.now().toString());
-    _printStoredPrayerTimes();
-    _startForegroundTimer(prayerTimes); // Timer للتشغيل في الفورغراوند
+    try {
+      final data = {'prayerTimes': prayerTimes, 'city': city, 'country': country};
+      await _prefs?.setString('prayer_times_data', json.encode(data));
+      await _prefs?.setString('prayer_times_date', DateTime.now().toString());
+    } catch (e) {
+      print('[ERROR] فشل تخزين أوقات الصلاة: $e');
+    }
   }
 
-  void _startForegroundTimer(Map<String, String> prayerTimes) {
-    _foregroundTimer?.cancel();
-    _foregroundTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
-      final now = TimeOfDay.now();
-      final arabicNames = {
-        'Fajr': 'الفجر',
-        'Dhuhr': 'الظهر',
-        'Asr': 'العصر',
-        'Maghrib': 'المغرب',
-        'Isha': 'العشاء',
-      };
-      for (var entry in prayerTimes.entries) {
-        if (!arabicNames.containsKey(entry.key)) continue;
-        final parts = entry.value.split(':');
-        if (parts.length < 2) continue;
-        final hour = int.tryParse(parts[0]) ?? 0;
-        final minute = int.tryParse(parts[1]) ?? 0;
-        if (now.hour == hour && now.minute == minute) {
-          // إشعار فورغراوند
-          await _notifications.show(
-            entry.key.hashCode,
-            'أذان ${arabicNames[entry.key]}',
-            'حان الآن موعد ${arabicNames[entry.key]}',
-            NotificationDetails(
-              android: AndroidNotificationDetails(
-                _adhanChannelId,
-                _adhanChannelName,
-                importance: Importance.max,
-                playSound: true,
-                sound: const RawResourceAndroidNotificationSound('mqa'),
-                icon: '@mipmap/ic_launcher',
-                color: KprimaryColor,
-              ),
-            ),
-          );
-          // تشغيل الصوت
-          if (_adhanFile != null) {
-            await _audioPlayer.play(DeviceFileSource(_adhanFile!.path));
+  void _startPrayerChecker() {
+    _prayerTimer?.cancel();
+    _prayerTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      try {
+        final state = context.read<PrayerCubit>().state;
+        if (state is PrayerLoaded) {
+          final now = DateTime.now();
+          for (var entry in state.prayerTimes.entries) {
+            final prayer = entry.key;
+            final time = entry.value;
+            final parts = time.split(':');
+            if (parts.length != 2) continue;
+            final hour = int.tryParse(parts[0]);
+            final minute = int.tryParse(parts[1]);
+            if (hour == null || minute == null) continue;
+
+            final prayerTime = DateTime(now.year, now.month, now.day, hour, minute);
+            final startWindow = prayerTime.subtract(const Duration(minutes: 1));
+            final endWindow = prayerTime.add(const Duration(minutes: 5));
+            if (now.isAfter(startWindow) &&
+                now.isBefore(endWindow) &&
+                (_adhanPlayedToday[prayer] != true)) {
+              _playForegroundAdhan();
+              _adhanPlayedToday[prayer] = true;
+              print('[INFO] الأذان شغال للواجهة للصلاة: $prayer');
+            }
           }
         }
+      } catch (e) {
+        print('[ERROR] خطأ في مراقبة أوقات الصلاة للواجهة: $e');
       }
     });
   }
 
-  Future<void> _printStoredPrayerTimes() async {
-    if (_prefs == null) return; // حماية من null
-    final data = _prefs!.getString('prayer_times_data');
-    final date = _prefs!.getString('prayer_times_date');
-    if (data != null && date != null) {
-      final decoded = json.decode(data);
-      print('🗓 آخر تحديث: $date');
-      print('🌍 المدينة: ${decoded['city']}, الدولة: ${decoded['country']}');
-      print('🕰 أوقات الصلاة:');
-      final prayers = Map<String, String>.from(decoded['prayerTimes']);
-      prayers.forEach((key, value) {
-        print('   $key: $value');
-      });
-    } else {
-      print('لا توجد بيانات مخزنة حالياً.');
-    }
-  }
-
-  Future<void> _scheduleAllPrayers(Map<String, String> prayerTimes) async {
-    if (!_permissionsGranted) {
-      print('⏰ [SCHED] Permissions not granted, skipping scheduling');
-      return;
-    }
-
+  void _resetAdhanFlagsDaily() {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
+    Timer(nextMidnight.difference(now), () {
+      _adhanPlayedToday.clear();
+      _resetAdhanFlagsDaily();
+    });
+  }
 
-    final lastScheduledDate = _prefs?.getString('last_scheduled_date');
-    if (lastScheduledDate == today.toString() && _prayersScheduledToday) {
-      print('⏰ [SCHED] Already scheduled prayers for today');
-      return;
-    }
-
-    final arabicNames = {
-      'Fajr': 'الفجر',
-      'Dhuhr': 'الظهر',
-      'Asr': 'العصر',
-      'Maghrib': 'المغرب',
-      'Isha': 'العشاء',
-    };
-
+  Future<void> _playForegroundAdhan() async {
+    if (adhanFilePathForeground == null) return;
     try {
-      for (var entry in prayerTimes.entries) {
-        if (!arabicNames.containsKey(entry.key)) continue;
-        final parts = entry.value.split(':');
-        if (parts.length < 2) continue;
-        final hour = int.tryParse(parts[0]) ?? 0;
-        final minute = int.tryParse(parts[1]) ?? 0;
-        final tzPrayerTime = tz.TZDateTime(tz.local, today.year, today.month, today.day, hour, minute);
-        if (tzPrayerTime.isBefore(tz.TZDateTime.now(tz.local))) continue;
-        final tzBefore5Min = tzPrayerTime.subtract(const Duration(minutes: 5));
-
-        // إشعار قبل الصلاة
-        await _notifications.zonedSchedule(
-          entry.key.hashCode + 10000,
-          'تذكير قبل صلاة ${arabicNames[entry.key]}',
-          'باقٍ 5 دقائق على ${arabicNames[entry.key]}',
-          tzBefore5Min,
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              _reminderChannelId,
-              _reminderChannelName,
-              importance: Importance.high,
-              icon: '@mipmap/ic_launcher',
-              color: KprimaryColor,
-            ),
-          ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-        );
-
-        // إشعار الأذان
-        await _notifications.zonedSchedule(
-          entry.key.hashCode + 20000,
-          'أذان ${arabicNames[entry.key]}',
-          'حان الآن موعد ${arabicNames[entry.key]}',
-          tzPrayerTime,
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              _adhanChannelId,
-              _adhanChannelName,
-              importance: Importance.max,
-              playSound: true,
-              sound: const RawResourceAndroidNotificationSound('mqa'),
-              icon: '@mipmap/ic_launcher',
-              color: KprimaryColor,
-            ),
-          ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-        );
-
-        // تشغيل الأذان بالـ AlarmManager (لـ background)
-        await AndroidAlarmManager.oneShotAt(
-          tzPrayerTime,
-          entry.key.hashCode + 50000,
-          _playAdhanCallback,
-          exact: true,
-          wakeup: true,
-          allowWhileIdle: true,
-          rescheduleOnReboot: true,
-        );
-      }
-
-      _prayersScheduledToday = true;
-      await _prefs?.setString('last_scheduled_date', today.toString());
-      await _scheduleDailyUpdate();
-      print('✅ [SCHED] All prayers scheduled successfully');
+      _foregroundPlayer?.stop();
+      _foregroundPlayer = AudioPlayer();
+      await _foregroundPlayer!.setFilePath(adhanFilePathForeground!);
+      await _foregroundPlayer!.play();
     } catch (e) {
-      print('❌ [SCHED] Error scheduling prayers: $e');
-    }
-  }
-
-  Future<void> _scheduleDailyUpdate() async {
-    final now = DateTime.now();
-    final tomorrow = DateTime(now.year, now.month, now.day + 1, 0, 5);
-    await AndroidAlarmManager.oneShotAt(
-      tomorrow,
-      99999,
-      _updatePrayerTimesCallbackStatic,
-      exact: true,
-      wakeup: true,
-      allowWhileIdle: true,
-      rescheduleOnReboot: true,
-    );
-  }
-
-  @pragma('vm:entry-point')
-  static Future<void> _updatePrayerTimesCallbackStatic() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('prayer_times_data');
-    await prefs.remove('prayer_times_date');
-    await prefs.remove('last_scheduled_date');
-    print('🗑 [UPDATE] Cleared cached prayer times');
-  }
-
-  @pragma('vm:entry-point')
-  static Future<void> _playAdhanCallback() async {
-    try {
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/mqa.mp3'); // **الباث كما هو**
-      if (await file.exists()) {
-        final player = AudioPlayer();
-        await player.play(DeviceFileSource(file.path));
-        await player.setReleaseMode(ReleaseMode.stop);
-      } else {
-        print('❌ [AUDIO] Adhan file not found at ${file.path}');
-      }
-    } catch (e) {
-      print('❌ [AUDIO] Error playing adhan: $e');
+      print('[ERROR] فشل تشغيل الأذان في الواجهة: $e');
     }
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _audioPlayer.dispose();
-    _foregroundTimer?.cancel();
+    _prayerTimer?.cancel();
+    _foregroundPlayer?.stop();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (!_prayersScheduledToday && _prefs != null) {
-        final cachedData = _prefs!.getString('prayer_times_data');
-        if (cachedData != null) {
-          final prayerTimes = Map<String, String>.from(json.decode(cachedData)['prayerTimes']);
-          _scheduleAllPrayers(prayerTimes);
-          _startForegroundTimer(prayerTimes); // تفعيل الفورغراوند فورًا
-        }
-      }
-    }
   }
 
   @override
@@ -420,14 +268,8 @@ class _PrayerTimesState extends State<PrayerTimes> with WidgetsBindingObserver {
               backgroundColor: KprimaryColor,
               elevation: 0,
               leading: IconButton(
-                onPressed: () {
-                  context.read<BottomNavCubit>().setIndex(0);
-                },
-                icon: Icon(
-                  Icons.arrow_back_ios_new,
-                  color: Colors.white,
-                  size: width * 0.05,
-                ),
+                onPressed: () => context.read<BottomNavCubit>().setIndex(0),
+                icon: Icon(Icons.arrow_back_ios_new, color: Colors.white, size: width * 0.05),
               ),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -435,22 +277,14 @@ class _PrayerTimesState extends State<PrayerTimes> with WidgetsBindingObserver {
                   Text(
                     'أوقات الصلاة',
                     style: TextStyle(
-                      fontSize: fontBig,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                        fontSize: fontBig, color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                   Flexible(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(width: 5),
-                        Icon(
-                          Icons.location_on,
-                          color: Colors.orangeAccent,
-                          size: width * 0.04,
-                        ),
+                        Icon(Icons.location_on, color: Colors.orangeAccent, size: width * 0.04),
                         Text(
                           context.watch<PrayerCubit>().state is PrayerLoaded
                               ? '${(context.watch<PrayerCubit>().state as PrayerLoaded).city}, ${(context.watch<PrayerCubit>().state as PrayerLoaded).country}'
@@ -468,53 +302,20 @@ class _PrayerTimesState extends State<PrayerTimes> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-              centerTitle: false,
             ),
             Expanded(
               child: BlocConsumer<PrayerCubit, PrayerState>(
                 listener: (context, state) async {
                   if (state is PrayerLoaded) {
-                    await _cachePrayerTimes(
-                      state.prayerTimes,
-                      state.city,
-                      state.country,
-                    );
-                    await _scheduleAllPrayers(state.prayerTimes);
+                    await _cachePrayerTimes(state.prayerTimes, state.city, state.country);
+                    scheduleAllPrayers(state.prayerTimes);
                   }
                 },
                 builder: (context, state) {
                   if (state is PrayerLoading) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: KprimaryColor),
-                    );
+                    return const Center(child: CircularProgressIndicator(color: KprimaryColor));
                   } else if (state is PrayerError) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.wifi_off, size: 50, color: Colors.grey),
-                          const SizedBox(height: 16),
-                          Text(
-                            state.message,
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: fontBig,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'يتم استخدام آخر بيانات مخزنة',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: fontNormal,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
+                    return Center(child: Text(state.message, textAlign: TextAlign.center));
                   } else if (state is PrayerLoaded) {
                     return SingleChildScrollView(
                       child: Column(
@@ -531,31 +332,13 @@ class _PrayerTimesState extends State<PrayerTimes> with WidgetsBindingObserver {
                           ),
                           Padding(
                             padding: EdgeInsets.symmetric(horizontal: width * 0.03, vertical: height * 0.01),
-                            child: PrayerTimesList(
-                              context,
-                              state,
-                              fontBig,
-                              width,
-                              height,
-                            ),
+                            child: PrayerTimesList(context, state, fontBig, width, height),
                           ),
                         ],
                       ),
                     );
                   } else {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(color: KprimaryColor),
-                          const SizedBox(height: 16),
-                          Text(
-                            'جاري تهيئة التطبيق...',
-                            style: TextStyle(fontSize: fontBig),
-                          ),
-                        ],
-                      ),
-                    );
+                    return const Center(child: CircularProgressIndicator(color: KprimaryColor));
                   }
                 },
               ),

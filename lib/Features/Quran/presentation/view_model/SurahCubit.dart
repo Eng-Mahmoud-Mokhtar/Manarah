@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:dio/dio.dart';
@@ -6,7 +7,7 @@ import 'States.dart';
 class SurahCubit extends Cubit<SurahState> {
   final String surahId;
   final Dio dio;
-  late AudioPlayer _player;
+  late final AudioPlayer _player;
   List<String> ayahAudioUrls = [];
 
   SurahCubit({required this.surahId, Dio? dio})
@@ -17,6 +18,7 @@ class SurahCubit extends Cubit<SurahState> {
     fetchReciters();
   }
 
+  /// مراقبة حالة اللاعب وتحديث الحالة
   void _listenPlayer() {
     _player.positionStream.listen((p) {
       if (state is SurahLoaded) {
@@ -32,7 +34,7 @@ class SurahCubit extends Cubit<SurahState> {
       }
     });
 
-    _player.playerStateStream.listen((playerState) async {
+    _player.playerStateStream.listen((playerState) {
       if (state is SurahLoaded) {
         final s = state as SurahLoaded;
 
@@ -54,6 +56,7 @@ class SurahCubit extends Cubit<SurahState> {
     });
   }
 
+  /// جلب قائمة القراء
   Future<void> fetchReciters() async {
     emit(SurahLoading());
     try {
@@ -65,7 +68,8 @@ class SurahCubit extends Cubit<SurahState> {
         final data = response.data;
         final reciters = List<Map<String, dynamic>>.from(data['data'])
             .where((reciter) =>
-        reciter['format'] == 'audio' && reciter['type'] == 'versebyverse')
+        reciter['format'] == 'audio' &&
+            reciter['type'] == 'versebyverse')
             .toList();
 
         emit(SurahLoaded(
@@ -84,6 +88,7 @@ class SurahCubit extends Cubit<SurahState> {
     }
   }
 
+  /// جلب رابط كامل للسورة
   Future<String?> getFullSurahAudioUrl(String editionIdentifier) async {
     final url =
         'https://cdn.alquran.cloud/media/audio/full/$editionIdentifier/$surahId.mp3';
@@ -96,6 +101,7 @@ class SurahCubit extends Cubit<SurahState> {
     }
   }
 
+  /// جلب روابط آيات السورة
   Future<List<String>> getAyahAudioUrls(String editionIdentifier) async {
     try {
       final response = await dio
@@ -105,78 +111,88 @@ class SurahCubit extends Cubit<SurahState> {
       if (response.statusCode == 200) {
         final data = response.data;
         final ayahs = data['data']['ayahs'] as List;
-        return ayahs.map<String>((ayah) => ayah['audio'] as String).toList();
+
+        // تصفية أي nulls والتحويل إلى List<String>
+        return ayahs
+            .map((ayah) => ayah['audio'])
+            .whereType<String>()
+            .toList();
       } else {
-        throw Exception('فشل تحميل آيات الصوت');
+        debugPrint('Failed to load ayah audio URLs: ${response.statusCode}');
+        return [];
       }
     } catch (e) {
-      throw e;
+      debugPrint('Exception in getAyahAudioUrls: $e');
+      return [];
     }
   }
 
+  /// تشغيل أو إيقاف الصوت
   Future<void> playAudio(String editionIdentifier, int index) async {
-    try {
-      if (state is SurahLoaded) {
-        final s = state as SurahLoaded;
+    if (state is! SurahLoaded) return;
+    final s = state as SurahLoaded;
 
-        if (s.playingIndex == index) {
-          if (s.isPlaying) {
-            await _player.pause();
-            emit(s.copyWith(isPlaying: false));
-          } else {
-            await _player.play();
-            emit(s.copyWith(isPlaying: true));
-          }
+    try {
+      if (s.playingIndex == index) {
+        if (s.isPlaying) {
+          await _player.pause();
+          emit(s.copyWith(isPlaying: false));
+        } else {
+          await _player.play();
+          emit(s.copyWith(isPlaying: true));
+        }
+        return;
+      }
+
+      await _player.stop();
+      emit(s.copyWith(
+        isLoading: true,
+        playingIndex: index,
+        isPlaying: false,
+        duration: Duration.zero,
+        position: Duration.zero,
+      ));
+
+      String? fullSurahUrl = await getFullSurahAudioUrl(editionIdentifier);
+      if (fullSurahUrl != null) {
+        await _player.setAudioSource(AudioSource.uri(Uri.parse(fullSurahUrl)));
+        ayahAudioUrls = [fullSurahUrl];
+      } else {
+        ayahAudioUrls = await getAyahAudioUrls(editionIdentifier);
+        if (ayahAudioUrls.isEmpty) {
+          emit(s.copyWith(isLoading: false, playingIndex: null));
           return;
         }
-
-        await _player.stop();
-
-        emit(s.copyWith(
-          isLoading: true,
-          playingIndex: index,
-          isPlaying: false,
-          duration: Duration.zero,
-          position: Duration.zero,
-        ));
-
-        String? fullSurahUrl = await getFullSurahAudioUrl(editionIdentifier);
-        if (fullSurahUrl != null) {
-          await _player.setAudioSource(AudioSource.uri(Uri.parse(fullSurahUrl)));
-          ayahAudioUrls = [fullSurahUrl];
-        } else {
-          ayahAudioUrls = await getAyahAudioUrls(editionIdentifier);
-          await _player.setAudioSource(
-            ConcatenatingAudioSource(
-              children: ayahAudioUrls
-                  .map((url) => AudioSource.uri(Uri.parse(url)))
-                  .toList(),
-            ),
-          );
-        }
-
-        emit(s.copyWith(
-          isLoading: false,
-          isPlaying: true,
-          playingIndex: index,
-          duration: _player.duration ?? Duration.zero,
-          position: Duration.zero,
-        ));
-
-        await _player.play();
+        await _player.setAudioSource(
+          ConcatenatingAudioSource(
+            children: ayahAudioUrls
+                .map((url) => AudioSource.uri(Uri.parse(url)))
+                .toList(),
+          ),
+        );
       }
+
+      emit(s.copyWith(
+        isLoading: false,
+        isPlaying: true,
+        playingIndex: index,
+        duration: _player.duration ?? Duration.zero,
+        position: Duration.zero,
+      ));
+
+      await _player.play();
     } catch (e) {
-      if (state is SurahLoaded) {
-        final s = state as SurahLoaded;
-        emit(s.copyWith(isLoading: false, playingIndex: null));
-      }
+      debugPrint('Exception in playAudio: $e');
+      emit(s.copyWith(isLoading: false, playingIndex: null));
     }
   }
 
-  void seek(Duration position) async {
+  /// الانتقال لموضع محدد
+  Future<void> seek(Duration position) async {
     await _player.seek(position);
   }
 
+  /// تنظيف اللاعب
   void disposePlayer() {
     _player.stop();
     _player.dispose();

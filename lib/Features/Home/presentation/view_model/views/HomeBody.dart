@@ -8,13 +8,18 @@ import 'package:manarah/Core/Const/Colors.dart';
 import 'package:manarah/Core/Const/Images.dart';
 import 'package:manarah/Features/Home/presentation/view_model/date_cubit.dart';
 import 'package:manarah/Features/Home/presentation/view_model/date_state.dart';
-import 'package:manarah/Features/Home/presentation/view_model/views/Home.dart';
+import 'package:manarah/Features/Home/presentation/view_model/views/widgets/BottomBar.dart';
 import 'package:manarah/Features/Home/presentation/view_model/views/widgets/duas.dart';
 import 'package:manarah/Features/Prayer/presentation/view_model/prayer_cubit.dart';
 import 'package:manarah/Features/Prayer/presentation/view_model/prayer_state.dart';
 import 'package:manarah/Features/Sebha/presentation/view_model/views/Sebha.dart';
-import '../../../../../Quran/presentation/view_model/views/Quran.dart';
-import 'CustomContainer.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import '../../../../../main.dart';
+import '../../../../Quran/presentation/view_model/views/Quran.dart';
+import 'widgets/CustomContainer.dart';
+import 'widgets/ProcessNotification.dart' hide globalNotificationsPlugin, callbackDispatcher;
 
 class HomeBody extends StatefulWidget {
   const HomeBody({super.key});
@@ -26,106 +31,299 @@ class HomeBody extends StatefulWidget {
 class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
   late Map<String, String> randomDua;
   bool isLocationEnabled = false;
-  bool isNotificationsEnabled = false;
+  bool notificationsEnabled = true;
   StreamSubscription<ServiceStatus>? _locationServiceSubscription;
 
   @override
   void initState() {
     super.initState();
+    print("🟢 [HOME_BODY] تهيئة حالة HomeBody");
+
     WidgetsBinding.instance.addObserver(this);
     randomDua = duas[Random().nextInt(duas.length)];
-    _checkAndRequestLocationPermission();
-    _checkLocationStatus();
-    _loadNotificationStatus();
-    _locationServiceSubscription = Geolocator.getServiceStatusStream().listen((status) {
-      _checkLocationStatus();
+
+    _initializeApp().then((_) {
+      print("✅ [HOME_BODY] التهيئة اكتملت بنجاح");
+    }).catchError((error) {
+      print("❌ [HOME_BODY] خطأ في التهيئة: $error");
     });
   }
 
+  // تهيئة التطبيق بالكامل
+  Future<void> _initializeApp() async {
+    print("🔵 [INIT] بدء تهيئة التطبيق");
+
+    await _initializeWorkManager();
+    await _loadNotificationSettings();
+    await _checkAndRequestLocationPermission();
+    await _checkLocationStatus();
+    await _setupNotificationChannel();
+
+    _locationServiceSubscription =
+        Geolocator.getServiceStatusStream().listen((status) {
+          print("🔵 [LOCATION] حالة خدمة الموقع تغيرت: $status");
+          _checkLocationStatus();
+        });
+
+    print("✅ [INIT] تهيئة التطبيق اكتملت");
+  }
+  // تهيئة WorkManager
+  Future<void> _initializeWorkManager() async {
+    try {
+      print("🔵 [WORKMANAGER] بدء تهيئة WorkManager");
+
+      await Workmanager().initialize(
+        callbackDispatcher,
+        isInDebugMode: false,
+      );
+
+      // تسجيل المهمة الدورية مرة واحدة فقط
+      final prefs = await SharedPreferences.getInstance();
+      final isTaskRegistered = prefs.getBool('task_registered') ?? false;
+
+      if (!isTaskRegistered) {
+        print("🔵 [WORKMANAGER] تسجيل المهمة الدورية لأول مرة");
+        await _startBackgroundNotifications();
+        await prefs.setBool('task_registered', true);
+        print("✅ [WORKMANAGER] تم تسجيل المهمة الدورية بنجاح");
+      } else {
+        print("🔵 [WORKMANAGER] المهمة مسجلة مسبقاً، جاري التحقق من狀態ها");
+        // تحقق من حالة المهمة وقم بإعادة جدولتها إذا لزم الأمر
+        await _startBackgroundNotifications();
+      }
+    } catch (e) {
+      print("❌ [WORKMANAGER] خطأ في تهيئة WorkManager: $e");
+      // بديل باستخدام AndroidAlarmManager
+      await _setupAlarmManager();
+    }
+  }
+  // تهيئة AndroidAlarmManager كبديل
+  Future<void> _setupAlarmManager() async {
+    try {
+      print("🔵 [ALARM_MANAGER] بدء تهيئة AndroidAlarmManager");
+
+      await AndroidAlarmManager.initialize();
+      await AndroidAlarmManager.periodic(
+        const Duration(minutes: 40),
+        0,
+        alarmManagerCallback,
+        wakeup: true,
+        rescheduleOnReboot: true,
+      );
+      print("✅ [ALARM_MANAGER] تم تفعيل الإشعارات باستخدام AndroidAlarmManager");
+    } catch (e) {
+      print("❌ [ALARM_MANAGER] خطأ في تهيئة AndroidAlarmManager: $e");
+    }
+  }
+  // تحميل إعدادات الإشعارات من SharedPreferences
+  Future<void> _loadNotificationSettings() async {
+    try {
+      print("🔵 [SETTINGS] جاري تحميل إعدادات الإشعارات");
+
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+      });
+
+      print("✅ [SETTINGS] تم تحميل إعدادات الإشعارات: $notificationsEnabled");
+    } catch (e) {
+      print("❌ [SETTINGS] خطأ في تحميل إعدادات الإشعارات: $e");
+    }
+  }
+  // حفظ إعدادات الإشعارات إلى SharedPreferences
+  Future<void> _saveNotificationSettings(bool value) async {
+    try {
+      print("🔵 [SETTINGS] جاري حفظ إعدادات الإشعارات: $value");
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('notifications_enabled', value);
+      setState(() {
+        notificationsEnabled = value;
+      });
+
+      if (value) {
+        print("🔵 [SETTINGS] تفعيل الإشعارات في الخلفية");
+        await _startBackgroundNotifications();
+      } else {
+        print("🔵 [SETTINGS] إلغاء تفعيل الإشعارات في الخلفية");
+        await Workmanager().cancelByTag("quarter_hourly_task");
+        try {
+          await AndroidAlarmManager.cancel(0);
+          print("✅ [SETTINGS] تم إلغاء الإشعارات بنجاح");
+        } catch (e) {
+          print("❌ [SETTINGS] خطأ في إلغاء الإشعارات: $e");
+        }
+      }
+
+      print("✅ [SETTINGS] تم حفظ إعدادات الإشعارات بنجاح");
+    } catch (e) {
+      print("❌ [SETTINGS] خطأ في حفظ إعدادات الإشعارات: $e");
+    }
+  }
+  // إنشاء قناة الإشعارات
+  Future<void> _setupNotificationChannel() async {
+    try {
+      print("🔵 [NOTIFICATIONS] جاري إنشاء قناة الإشعارات");
+
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'quarter_hourly_channel',
+        'الإشعارات الربع ساعية',
+        description: 'قناة للإشعارات المرسلة كل ربع ساعة',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
+
+      await globalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+
+      print("✅ [NOTIFICATIONS] تم إنشاء قناة الإشعارات بنجاح");
+    } catch (e) {
+      print("❌ [NOTIFICATIONS] خطأ في إنشاء قناة الإشعارات: $e");
+    }
+  }
+  // بدء الإشعارات في الخلفية (كل ربع ساعة)
+  Future<void> _startBackgroundNotifications() async {
+    try {
+      print("🔵 [BACKGROUND] بدء إعداد إشعارات الخلفية");
+
+      // إلغاء أي مهام سابقة بنفس الاسم
+      await Workmanager().cancelByTag("quarter_hourly_task");
+
+      // تسجيل المهمة الدورية
+      await Workmanager().registerPeriodicTask(
+        "quarter_hourly_task",
+        "quarter_hourly_task",
+        frequency: const Duration(minutes: 40),
+        initialDelay: const Duration(seconds: 10),
+        constraints: Constraints(
+          networkType: NetworkType.notRequired,
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresBatteryNotLow: false,
+        ),
+        tag: "quarter_hourly_task",
+      );
+      print("✅ [BACKGROUND] تم تفعيل إشعارات كل ربع ساعة بنجاح باستخدام WorkManager");
+    } catch (e) {
+      print("❌ [BACKGROUND] خطأ في تفعيل الإشعارات باستخدام WorkManager: $e");
+
+      // حل بديل باستخدام android_alarm_manager_plus
+      await _setupAlarmManager();
+    }
+  }
   @override
   void dispose() {
+    print("🔵 [HOME_BODY] جاري التخلص من الموارد");
+
     _locationServiceSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+
+    print("✅ [HOME_BODY] تم التخلص من الموارد بنجاح");
     super.dispose();
   }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    print("🔵 [LIFECYCLE] تغير حالة التطبيق: $state");
+
     if (state == AppLifecycleState.resumed) {
+      print("🔵 [LIFECYCLE] التطبيق عاد للعمل، جاري تحديث البيانات");
       _checkLocationStatus();
       context.read<PrayerCubit>().getPrayerTimes();
     }
   }
-
   Future<void> _checkLocationStatus() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    LocationPermission permission = await Geolocator.checkPermission();
-    setState(() {
-      isLocationEnabled = serviceEnabled &&
-          (permission == LocationPermission.whileInUse ||
-              permission == LocationPermission.always);
-    });
-  }
+    try {
+      print("🔵 [LOCATION] جاري التحقق من حالة الموقع");
 
-  Future<void> _loadNotificationStatus() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    setState(() {
-      isNotificationsEnabled = prefs.getBool('notifications_enabled') ?? false;
-    });
-  }
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      LocationPermission permission = await Geolocator.checkPermission();
 
-  Future<bool> _hasShownPermissionDialog() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('has_shown_permission_dialog') ?? false;
-  }
+      setState(() {
+        isLocationEnabled = serviceEnabled &&
+            (permission == LocationPermission.whileInUse ||
+                permission == LocationPermission.always);
+      });
 
-  Future<void> _setPermissionDialogShown() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('has_shown_permission_dialog', true);
-  }
-
-  Future<void> _checkAndRequestLocationPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    LocationPermission permission = await Geolocator.checkPermission();
-
-    if (!serviceEnabled) {
-      bool hasShownDialog = await _hasShownPermissionDialog();
-      if (!hasShownDialog && mounted) {
-        _showLocationDialog('يرجى تفعيل خدمات الموقع');
-        await _setPermissionDialogShown();
-      }
-      return;
+      print("✅ [LOCATION] حالة الموقع: $isLocationEnabled (الخدمة: $serviceEnabled, الإذن: $permission)");
+    } catch (e) {
+      print("❌ [LOCATION] خطأ في التحقق من حالة الموقع: $e");
     }
+  }
+  Future<bool> _hasShownPermissionDialog() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('has_shown_permission_dialog') ?? false;
+    } catch (e) {
+      print("❌ [PERMISSION] خطأ في التحقق من حالة الحوار: $e");
+      return false;
+    }
+  }
+  Future<void> _setPermissionDialogShown() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('has_shown_permission_dialog', true);
+    } catch (e) {
+      print("❌ [PERMISSION] خطأ في حفظ حالة الحوار: $e");
+    }
+  }
+  Future<void> _checkAndRequestLocationPermission() async {
+    try {
+      print("🔵 [PERMISSION] جاري التحقق من أذونات الموقع");
 
-    if (permission == LocationPermission.denied) {
-      bool hasShownDialog = await _hasShownPermissionDialog();
-      if (!hasShownDialog && mounted) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied && mounted) {
-          _showLocationDialog('تم رفض إذن الموقع.');
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (!serviceEnabled) {
+        bool hasShownDialog = await _hasShownPermissionDialog();
+        if (!hasShownDialog && mounted) {
+          print("🔵 [PERMISSION] عرض حوار تفعيل خدمات الموقع");
+          _showLocationDialog('يرجى تفعيل خدمات الموقع');
           await _setPermissionDialogShown();
-          return;
+        }
+        return;
+      }
+
+      if (permission == LocationPermission.denied) {
+        bool hasShownDialog = await _hasShownPermissionDialog();
+        if (!hasShownDialog && mounted) {
+          print("🔵 [PERMISSION] طلب إذن الموقع");
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.denied && mounted) {
+            print("🔵 [PERMISSION] تم رفض إذن الموقع، عرض الحوار");
+            _showLocationDialog('تم رفض إذن الموقع.');
+            await _setPermissionDialogShown();
+            return;
+          }
         }
       }
-    }
 
-    if (permission == LocationPermission.deniedForever && mounted) {
-      bool hasShownDialog = await _hasShownPermissionDialog();
-      if (!hasShownDialog) {
-        _showLocationDialog('إذن الموقع مرفوض نهائيًا. يرجى تفعيله من إعدادات التطبيق.');
-        await _setPermissionDialogShown();
+      if (permission == LocationPermission.deniedForever && mounted) {
+        bool hasShownDialog = await _hasShownPermissionDialog();
+        if (!hasShownDialog) {
+          print("🔵 [PERMISSION] إذن الموقع مرفوض نهائياً، عرض الحوار");
+          _showLocationDialog('إذن الموقع مرفوض نهائيًا. يرجى تفعيله من إعدادات التطبيق.');
+          await _setPermissionDialogShown();
+        }
+        return;
       }
-      return;
-    }
 
-    if (permission == LocationPermission.whileInUse ||
-        permission == LocationPermission.always) {
-      _checkLocationStatus();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        print("✅ [PERMISSION] أذونات الموقع ممنوحة بنجاح");
+        _checkLocationStatus();
+      }
+    } catch (e) {
+      print("❌ [PERMISSION] خطأ في التحقق من أذونات الموقع: $e");
     }
   }
-
   void _showLocationDialog(String message) {
     if (!mounted) return;
+
+    print("🔵 [DIALOG] عرض حوار الموقع: $message");
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -145,7 +343,7 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
         ),
         title: Row(
           children: [
-            Icon(Icons.location_on, color: Colors.orangeAccent, size: 24),
+            const Icon(Icons.location_on, color: Colors.orangeAccent, size: 24),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -183,7 +381,10 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
               ),
               backgroundColor: KprimaryColor.withOpacity(0.1),
             ),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              print("🔵 [DIALOG] تم النقر على موافق في حوار الموقع");
+              Navigator.pop(context);
+            },
             child: Text(
               'حسنًا',
               style: TextStyle(
@@ -197,40 +398,49 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
       ),
     );
   }
-
   Future<void> toggleLocationPermission(bool value) async {
-    if (value) {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        await Geolocator.openLocationSettings();
-        await _checkLocationStatus();
-        if (await Geolocator.isLocationServiceEnabled()) {
+    try {
+      print("🔵 [LOCATION] تغيير إذن الموقع إلى: $value");
+
+      if (value) {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          print("🔵 [LOCATION] خدمات الموقع معطلة، فتح إعدادات الموقع");
+          await Geolocator.openLocationSettings();
+          await _checkLocationStatus();
+          if (await Geolocator.isLocationServiceEnabled()) {
+            context.read<PrayerCubit>().getPrayerTimes();
+          }
+          return;
+        }
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          print("🔵 [LOCATION] طلب إذن الموقع");
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.deniedForever) {
+            print("🔵 [LOCATION] فتح إعدادات التطبيق لمنح الإذن");
+            await Geolocator.openAppSettings();
+          }
+        }
+        if (permission == LocationPermission.whileInUse ||
+            permission == LocationPermission.always) {
+          setState(() {
+            isLocationEnabled = true;
+          });
           context.read<PrayerCubit>().getPrayerTimes();
+          print("✅ [LOCATION] تم تفعيل الموقع بنجاح");
         }
-        return;
-      }
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.deniedForever) {
-          await Geolocator.openAppSettings();
-        }
-      }
-      if (permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always) {
+      } else {
         setState(() {
-          isLocationEnabled = true;
+          isLocationEnabled = false;
         });
-        context.read<PrayerCubit>().getPrayerTimes();
+        context.read<PrayerCubit>().disableLocation();
+        print("✅ [LOCATION] تم تعطيل الموقع بنجاح");
       }
-    } else {
-      setState(() {
-        isLocationEnabled = false;
-      });
-      context.read<PrayerCubit>().disableLocation();
+    } catch (e) {
+      print("❌ [LOCATION] خطأ في تغيير إذن الموقع: $e");
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -254,17 +464,20 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
       {
         'name': 'الأذكار',
         'image': 'Assets/fluent-emoji-high-contrast_prayer-beads.png',
-        'action': () => context.read<BottomNavCubit>().setIndex(3),
+        'action': () {
+          context.read<BottomNavCubit>().setIndex(3);
+        },
       },
     ];
-
     return BlocListener<PrayerCubit, PrayerState>(
       listener: (context, state) {
         if (state is PrayerLoaded) {
+          print("✅ [PRAYER] تم تحميل أوقات الصلاة بنجاح");
           setState(() {
             isLocationEnabled = true;
           });
         } else if (state is PrayerError) {
+          print("❌ [PRAYER] خطأ في تحميل أوقات الصلاة: ${state.message}");
           setState(() {
             isLocationEnabled = false;
           });
@@ -307,7 +520,7 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
                     children: [
                       ListTile(
                         title: Text(
-                         'اذن الموقع',
+                          'إذن الموقع',
                           style: TextStyle(fontSize: width * 0.03, fontWeight: FontWeight.bold),
                         ),
                         trailing: Switch(
@@ -315,7 +528,23 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
                           activeColor: KprimaryColor,
                           inactiveTrackColor: Colors.red.shade600,
                           onChanged: (value) {
+                            print("🔵 [SETTINGS] تغيير إذن الموقع إلى: $value");
                             toggleLocationPermission(value);
+                          },
+                        ),
+                      ),
+                      ListTile(
+                        title: Text(
+                          'الإشعارات',
+                          style: TextStyle(fontSize: width * 0.03, fontWeight: FontWeight.bold),
+                        ),
+                        trailing: Switch(
+                          value: notificationsEnabled,
+                          activeColor: KprimaryColor,
+                          inactiveTrackColor: Colors.red.shade600,
+                          onChanged: (value) {
+                            print("🔵 [SETTINGS] تغيير الإشعارات إلى: $value");
+                            _saveNotificationSettings(value);
                           },
                         ),
                       ),
@@ -421,6 +650,7 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
                                 size: width * 0.07,
                               ),
                               onPressed: () {
+                                print("🔵 [UI] فتح دروج الإعدادات");
                                 Scaffold.of(context).openEndDrawer();
                               },
                             ),
@@ -494,12 +724,15 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
                         child: GestureDetector(
                           onTap: item['action'] != null
                               ? item['action'] as VoidCallback
-                              : () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => item['page'],
-                            ),
-                          ),
+                              : () {
+                            print("🔵 [NAVIGATION] الانتقال إلى ${item['name']}");
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => item['page'],
+                              ),
+                            );
+                          },
                           child: CustomContainer(
                             name: item['name'],
                             imagePath: item['image'],

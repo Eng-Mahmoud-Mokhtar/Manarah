@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:manarah/Features/Home/presentation/view_model/views/widgets/HomeBody.dart';
-import '../../../../Azkar/presentation/view_model/views/Azkar.dart';
-import '../../../../Prayer/presentation/view_model/views/PrayerTimes.dart';
-import '../../../../Qubla/presentation/view_model/views/Qubla.dart';
-import '../../../../../Core/Const/Colors.dart';
+import 'package:manarah/Features/Home/presentation/view_model/views/HomeBody.dart';
+import '../../../../../Azkar/presentation/view_model/views/Azkar.dart';
+import '../../../../../Prayer/presentation/view_model/views/PrayerTimes.dart';
+import '../../../../../Qubla/presentation/view_model/views/Qubla.dart';
+import '../../../../../../Core/Const/Colors.dart';
 
 
 // ---------------- BottomNavCubit ----------------
@@ -20,14 +20,14 @@ class BottomNavCubit extends Cubit<int> {
 }
 
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class BottomBar extends StatefulWidget {
+  const BottomBar({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<BottomBar> createState() => _BottomBarState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _BottomBarState extends State<BottomBar> {
   final List<Widget> pages = [
     HomeBody(),
     const PrayerTimes(),

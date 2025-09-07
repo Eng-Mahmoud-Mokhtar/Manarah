@@ -41,12 +41,6 @@ Widget PrayerTimesList(
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.notifications_active,
-                  color: Colors.white,
-                  size: width * 0.05,
-                ),
-                SizedBox(width: width * 0.03),
                 Text(
                   arabicNames[prayerKey]!,
                   style: TextStyle(

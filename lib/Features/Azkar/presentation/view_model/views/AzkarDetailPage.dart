@@ -115,7 +115,7 @@ class _AzkarDetailPageState extends State<AzkarDetailPage> {
           : Stack(
         children: [
           Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               image: DecorationImage(
                 image: AssetImage("Assets/Login.png"),
                 fit: BoxFit.cover,
@@ -150,27 +150,35 @@ class _AzkarDetailPageState extends State<AzkarDetailPage> {
                               builder: (context) {
                                 final file = File(item['image']);
                                 if (file.existsSync()) {
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Image.file(
-                                      file,
-                                      height: 150,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        print('Error loading image: $error');
-                                        return Text(
-                                          'فشل في تحميل الصورة',
-                                          style: TextStyle(
-                                            fontSize: fontBig,
-                                            color: Colors.red,
-                                          ),
-                                        );
-                                      },
+                                  return GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => FullScreenImagePage(imagePath: item['image']),
+                                        ),
+                                      );
+                                    },
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.file(
+                                        file,
+                                        height: 150,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Text(
+                                            'فشل في تحميل الصورة',
+                                            style: TextStyle(
+                                              fontSize: fontBig,
+                                              color: Colors.red,
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ),
                                   );
                                 } else {
-                                  print('Image file does not exist: ${item['image']}');
                                   return Text(
                                     'الصورة غير متوفرة',
                                     style: TextStyle(
@@ -199,7 +207,7 @@ class _AzkarDetailPageState extends State<AzkarDetailPage> {
                               GestureDetector(
                                 onTap: () => _decreaseCount(index),
                                 child: Container(
-                                  decoration: BoxDecoration(
+                                  decoration: const BoxDecoration(
                                     color: KprimaryColor,
                                     shape: BoxShape.circle,
                                   ),
@@ -264,6 +272,39 @@ class _AzkarDetailPageState extends State<AzkarDetailPage> {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// صفحة عرض الصورة بالحجم الكامل مع إمكانية التكبير
+class FullScreenImagePage extends StatelessWidget {
+  final String imagePath;
+
+  const FullScreenImagePage({super.key, required this.imagePath});
+
+  @override
+  Widget build(BuildContext context) {
+    final file = File(imagePath);
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: file.existsSync()
+            ? InteractiveViewer(
+          panEnabled: true,
+          minScale: 0.5,
+          maxScale: 4.0,
+          child: Image.file(file),
+        )
+            : const Text(
+          'الصورة غير متوفرة',
+          style: TextStyle(color: Colors.red, fontSize: 18),
+        ),
       ),
     );
   }

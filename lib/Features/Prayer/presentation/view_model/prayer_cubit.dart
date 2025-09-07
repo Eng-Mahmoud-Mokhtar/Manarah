@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -64,7 +63,7 @@ class PrayerCubit extends Cubit<PrayerState> {
 
         emit(PrayerLoaded(prayerTimes: prayerTimes, city: city, country: country));
       } else {
-        emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت ولا توجد بيانات مخزنة'));
+        emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت'));
       }
     } catch (e) {
       emit(const PrayerError(message: 'لا يوجد اتصال بالإنترنت'));
