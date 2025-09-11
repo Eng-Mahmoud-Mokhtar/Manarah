@@ -36,7 +36,7 @@ void callbackDispatcher() {
             "🔵 [WORKMANAGER] تم اختيار آية عشوائية: ${randomMessage.substring(0, 30)}...",
           );
 
-          const AndroidNotificationDetails androidDetails =
+          final AndroidNotificationDetails androidDetails =
           AndroidNotificationDetails(
             'quarter_hourly_channel',
             '', // بدون عنوان
@@ -46,10 +46,11 @@ void callbackDispatcher() {
             playSound: true,
             enableVibration: true,
             timeoutAfter: 60000,
-            styleInformation: BigTextStyleInformation(''),
+            styleInformation: BigTextStyleInformation(
+              randomMessage, // 👈 خلي النص الكامل هنا
+            ),
           );
-
-          const NotificationDetails platformDetails = NotificationDetails(
+           NotificationDetails platformDetails = NotificationDetails(
             android: androidDetails,
           );
 
@@ -103,7 +104,7 @@ void alarmManagerCallback() {
           "🔵 [ALARM_MANAGER] تم اختيار آية عشوائية: ${randomMessage.substring(0, 30)}...",
         );
 
-        const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
           'quarter_hourly_channel',
           '', // بدون عنوان
@@ -113,10 +114,12 @@ void alarmManagerCallback() {
           playSound: true,
           enableVibration: true,
           timeoutAfter: 60000,
-          styleInformation: BigTextStyleInformation(''),
+          styleInformation: BigTextStyleInformation(
+            randomMessage, // 👈 خلي النص الكامل هنا
+          ),
         );
 
-        const NotificationDetails platformDetails = NotificationDetails(
+        NotificationDetails platformDetails = NotificationDetails(
           android: androidDetails,
         );
 

@@ -9,6 +9,8 @@ Widget PrayerTimesList(
     double fontBig,
     double width,
     double height,
+    Map<String, bool> adhanEnabled,
+    Function(String) toggleAdhanForPrayer,
     ) {
   final prayerTimes = state.prayerTimes;
   final Map<String, String> arabicNames = {
@@ -21,11 +23,11 @@ Widget PrayerTimesList(
   };
 
   return Column(
-    children:
-    prayerTimes.entries.map((entry) {
+    children: prayerTimes.entries.map((entry) {
       final prayerKey = entry.key;
       final time = entry.value;
       if (!arabicNames.containsKey(prayerKey)) return const SizedBox();
+
       return Container(
         margin: EdgeInsets.symmetric(vertical: height * 0.005),
         child: Card(
@@ -40,7 +42,21 @@ Widget PrayerTimesList(
               vertical: height * 0.015,
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                GestureDetector(
+                  onTap: () => toggleAdhanForPrayer(prayerKey),
+                  child: Icon(
+                    adhanEnabled[prayerKey] == true
+                        ? Icons.notifications_active
+                        : Icons.notifications_off,
+                    color: adhanEnabled[prayerKey] == true
+                        ? Colors.orange
+                        : Colors.red,
+                    size: fontBig * 1.3,
+                  ),
+                ),
+                SizedBox(width: width * 0.03),
                 Text(
                   arabicNames[prayerKey]!,
                   style: TextStyle(

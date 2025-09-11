@@ -26,18 +26,16 @@ dependencies:
   connectivity_plus:
   equatable: ^2.0.5
   device_preview: ^1.1.0
+  device_info_plus:
   flutter_native_splash:
   just_audio:
   permission_handler:
-  audio_service:
   flutter_local_notifications: ^17.2.2
   android_alarm_manager_plus:
   workmanager:
   timezone:
-  flutter_background_service:
   flutter_foreground_task:
   audioplayers:
-  just_audio_background:
 flutter_native_splash:
   color: "#203AA2"
 dev_dependencies:
@@ -47,9 +45,10 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 
 flutter_launcher_icons:
+  color: "#203AA2"
   android: true
   ios: true
-  image_path: "Assets/Screenshot (65).png"
+  image_path: "Assets/logo.png"
   min_sdk_android: 21
 
 flutter:
@@ -57,8 +56,7 @@ flutter:
   assets:
     - Assets/
     - Assets/data.json
-    - Assets/audio/مشاري ابن راشد.mp3
-    - android/app/src/main/res/raw/mqa.mp3
+    - Assets/audio/azan.mp3
 
 
   fonts:

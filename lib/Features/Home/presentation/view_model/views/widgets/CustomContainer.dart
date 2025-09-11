@@ -41,13 +41,13 @@ class CustomContainer extends StatelessWidget {
               height: screenWidth * 0.08,
               fit: BoxFit.contain,
             ),
-            SizedBox(height: screenWidth * 0.01),
+            SizedBox(height: screenWidth * 0.02),
             Text(
               name,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.black,
-                fontSize: screenWidth * 0.03,
+                fontSize: screenWidth * 0.027,
                 fontWeight: FontWeight.bold,
               ),
             ),

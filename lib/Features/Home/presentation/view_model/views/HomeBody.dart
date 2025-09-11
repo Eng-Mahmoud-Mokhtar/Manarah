@@ -8,7 +8,6 @@ import 'package:manarah/Core/Const/Colors.dart';
 import 'package:manarah/Core/Const/Images.dart';
 import 'package:manarah/Features/Home/presentation/view_model/date_cubit.dart';
 import 'package:manarah/Features/Home/presentation/view_model/date_state.dart';
-import 'package:manarah/Features/Home/presentation/view_model/views/widgets/BottomBar.dart';
 import 'package:manarah/Features/Home/presentation/view_model/views/widgets/duas.dart';
 import 'package:manarah/Features/Prayer/presentation/view_model/prayer_cubit.dart';
 import 'package:manarah/Features/Prayer/presentation/view_model/prayer_state.dart';
@@ -17,6 +16,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import '../../../../../main.dart';
+import '../../../../PrayerTracking/presentation/view_model/views/PrayerTracking.dart';
 import '../../../../Quran/presentation/view_model/views/Quran.dart';
 import 'widgets/CustomContainer.dart';
 import 'widgets/ProcessNotification.dart' hide globalNotificationsPlugin, callbackDispatcher;
@@ -446,15 +446,12 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
     final width = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
     final List<Map<String, dynamic>> items = [
-      {
-        'name': 'القرآن الكريم',
-        'image': 'Assets/Group.png',
-        'action': () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => Quran()),
-          );
-        },
+    {
+      'name': 'القرآن الكريم',
+    'image': 'Assets/alquran (1).png',
+    'action': () {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => Quran()));
+  },
       },
       {
         'name': 'التسبيح',
@@ -462,10 +459,13 @@ class _HomeBodyState extends State<HomeBody> with WidgetsBindingObserver {
         'page': Sebha(),
       },
       {
-        'name': 'الأذكار',
-        'image': 'Assets/fluent-emoji-high-contrast_prayer-beads.png',
+        'name': 'متابعة الصلاه',
+        'image': 'Assets/dua.png',
         'action': () {
-          context.read<BottomNavCubit>().setIndex(3);
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PrayerTracking()),
+          );
         },
       },
     ];

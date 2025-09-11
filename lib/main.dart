@@ -18,28 +18,17 @@ import 'Features/Home/presentation/view_model/date_cubit.dart';
 import 'Features/Prayer/presentation/view_model/prayer_cubit.dart';
 import 'Features/Home/presentation/view_model/views/widgets/notificationMessages.dart';
 
-// =========================
-// Global instances
-// =========================
 final sl = GetIt.instance;
 final FlutterLocalNotificationsPlugin globalNotificationsPlugin =
 FlutterLocalNotificationsPlugin();
 
-// =========================
-// Service Locator
-// =========================
 void setupServiceLocator() {
   sl.registerLazySingleton<Dio>(() => Dio());
 }
 
-// =========================
-// WorkManager callback
-// =========================
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    print("🔵 [WORKMANAGER] بدء تنفيذ المهمة: $task");
-
     if (task == "quarter_hourly_task") {
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -66,17 +55,36 @@ void callbackDispatcher() {
 
           await globalNotificationsPlugin.show(
             DateTime.now().millisecondsSinceEpoch ~/ 1000,
-            '', // بدون عنوان
+            '',
             randomAyah,
             platformDetails,
           );
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
 
-          print("✅ [WORKMANAGER] تم إرسال إشعار قرآن من الخلفية");
+    if (task == "daily_prayer_reset_task") {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final prayers = ["الفجر", "الظهر", "العصر", "المغرب", "العشاء"];
+        final yesterday = DateTime.now().subtract(const Duration(days: 1));
+        final yesterStr = yesterday.toString().split(" ")[0];
+        for (var prayer in prayers) {
+          bool done = prefs.getBool("$yesterStr-$prayer") ?? false;
+          if (!done) {
+          }
+        }
+
+        final todayStr = DateTime.now().toString().split(" ")[0];
+        for (var prayer in prayers) {
+          await prefs.setBool("$todayStr-$prayer", false);
         }
 
         return true;
       } catch (e) {
-        print("❌ [WORKMANAGER] خطأ في إرسال الإشعار: $e");
         return false;
       }
     }
@@ -85,9 +93,6 @@ void callbackDispatcher() {
   });
 }
 
-// =========================
-// Initialize Notifications
-// =========================
 Future<void> initializeNotifications() async {
   const AndroidInitializationSettings androidInit =
   AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -97,7 +102,6 @@ Future<void> initializeNotifications() async {
 
   await globalNotificationsPlugin.initialize(initSettings);
 
-  // إنشاء قناة الإشعارات
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'quarter_hourly_channel',
     'تذكير بالقرآن الكريم',
@@ -111,17 +115,12 @@ Future<void> initializeNotifications() async {
       ?.createNotificationChannel(channel);
 }
 
-// =========================
-// Main
-// =========================
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AndroidAlarmManager.initialize();
   tz.initializeTimeZones();
   await initializeDateFormatting('ar', null);
   setupServiceLocator();
-
-  // طلب صلاحيات
   if (Platform.isAndroid) {
     await Permission.ignoreBatteryOptimizations.request();
     await Permission.notification.request();
@@ -132,19 +131,13 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final int? lastPage = prefs.getInt('last_page');
 
-  // =========================
-  // تهيئة WorkManager ومسح المهام القديمة
-  // =========================
   await Workmanager().initialize(
     callbackDispatcher,
     isInDebugMode: true,
   );
 
-  // مسح أي مهام قديمة مسجلة
   await Workmanager().cancelAll();
-  await prefs.setBool('task_registered', false);
 
-  // تسجيل المهمة الدورية (ربع ساعة)
   await Workmanager().registerPeriodicTask(
     "quarter_hourly_task",
     "quarter_hourly_task",
@@ -156,11 +149,19 @@ void main() async {
       requiresDeviceIdle: false,
     ),
   );
-  await prefs.setBool('task_registered', true);
 
-  // =========================
-  // تشغيل التطبيق
-  // =========================
+  await Workmanager().registerPeriodicTask(
+    "daily_prayer_reset_task",
+    "daily_prayer_reset_task",
+    frequency: const Duration(hours: 24),
+    initialDelay: const Duration(seconds: 30),
+    constraints: Constraints(
+      networkType: NetworkType.notRequired,
+      requiresCharging: false,
+      requiresDeviceIdle: false,
+    ),
+  );
+
   runApp(
     DevicePreview(
       enabled: false,
@@ -169,9 +170,6 @@ void main() async {
   );
 }
 
-// =========================
-// MyApp
-// =========================
 class MyApp extends StatelessWidget {
   final int? lastPage;
   const MyApp({super.key, this.lastPage});
@@ -181,7 +179,8 @@ class MyApp extends StatelessWidget {
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => DateCubit()),
-        BlocProvider(create: (_) => BottomNavCubit(initialIndex: lastPage ?? 0)),
+        BlocProvider(
+            create: (_) => BottomNavCubit(initialIndex: lastPage ?? 0)),
         BlocProvider(create: (_) => PrayerCubit()),
       ],
       child: MaterialApp(

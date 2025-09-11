@@ -122,7 +122,7 @@ class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
           ),
           Center(
             child: !permissionGranted
-                ? Text('برجاء تفعيل موقع الجهاز', style: TextStyle(fontSize: fontBig))
+                ? Text('برجاء تفعيل الموقع', style: TextStyle(fontSize: fontBig))
                 : !sensorSupported
                 ? Text("الجهاز لا يدعم البوصلة", style: TextStyle(fontSize: fontBig))
                 : (_direction == null
