@@ -21,6 +21,19 @@ class PrayerCubit extends Cubit<PrayerState> {
     getPrayerTimes();
   }
 
+  // دالة للحصول على فهرس الصلاة في القائمة
+  int getPrayerIndex(String prayer) {
+    final List<String> prayerOrder = [
+      'Fajr',
+      'Sunrise',
+      'Dhuhr',
+      'Asr',
+      'Maghrib',
+      'Isha'
+    ];
+    return prayerOrder.indexOf(prayer);
+  }
+
   // مراقبة الاتصال بالإنترنت
   void _monitorConnectivity() {
     _connectivitySubscription = Connectivity()

@@ -140,6 +140,66 @@ class _PrayerTimesState extends State<PrayerTimes> {
       _adhanEnabled[prayer] = !_adhanEnabled[prayer]!;
     });
     _saveAdhanSettings();
+
+    // إلغاء المنبهات للصلاة المعطلة
+    if (!_adhanEnabled[prayer]!) {
+      _cancelScheduledPrayer(prayer);
+    } else {
+      // إعادة جدولة المنبهات للصلاة المفعلة
+      final state = context.read<PrayerCubit>().state;
+      if (state is PrayerLoaded) {
+        _scheduleSinglePrayer(prayer, state.prayerTimes[prayer]!);
+      }
+    }
+  }
+
+  Future<void> _cancelScheduledPrayer(String prayer) async {
+    try {
+      final state = context.read<PrayerCubit>().state;
+      if (state is PrayerLoaded) {
+        final prayerIndex = state.prayerTimes.keys.toList().indexOf(prayer);
+        if (prayerIndex != -1) {
+          final now = DateTime.now();
+          int uniqueId = now.day * 10 + prayerIndex;
+          await AndroidAlarmManager.cancel(uniqueId);
+          print('[CANCELLED] تم إلغاء منبه الأذان لصلاة $prayer');
+        }
+      }
+    } catch (e) {
+      print('[ERROR] فشل إلغاء منبه الأذان: $e');
+    }
+  }
+
+  Future<void> _scheduleSinglePrayer(String prayer, String time) async {
+    try {
+      final now = DateTime.now();
+      final parts = time.split(':');
+      if (parts.length != 2) return;
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+      if (hour == null || minute == null) return;
+
+      DateTime prayerDateTime = DateTime(now.year, now.month, now.day, hour, minute);
+      if (prayerDateTime.isBefore(now)) {
+        prayerDateTime = prayerDateTime.add(const Duration(days: 1));
+      }
+
+      final prayerIndex = context.read<PrayerCubit>().getPrayerIndex(prayer);
+      int uniqueId = now.day * 10 + prayerIndex;
+
+      await AndroidAlarmManager.oneShotAt(
+        prayerDateTime,
+        uniqueId,
+        adhanAlarmCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+      );
+
+      print('[RESCHEDULED] تمت إعادة جدولة منبه الأذان لصلاة $prayer في ${prayerDateTime.toLocal()}');
+    } catch (e) {
+      print('[ERROR] فشل إعادة جدولة منبه الأذان: $e');
+    }
   }
 
   Future<void> _prepareAdhanFile() async {
