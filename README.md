@@ -1,16 +1,26 @@
 # manarah
 
-A new Flutter project.
+القرآن الكريم كاملًا للقراءة بدون إنترنت.
 
-## Getting Started
+القرآن الكريم بالصوت مع مجموعة من أفضل القرّاء تختار من بينهم.
 
-This project is a starting point for a Flutter application.
+مكتبة أذكار مرنة (إضافة نص أو صورة مع التحكم الكامل).
 
-A few resources to get you started if this is your first Flutter project:
+مسبحة رقمية متكاملة.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+جميع أوقات الصلاة حسب الموقع الجغرافي.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+عدّاد للوقت المتبقي للصلاة القادمة.
+
+الأذان مع إمكانية تشغيله أو إيقافه لكل صلاة على حدة.
+
+إشعارات بآيات قرآنية كل 40 دقيقة مع اشعار قبل الاذان ب 3 دقائق مع تحكم كامل من الإعدادات.
+
+بوصلة دقيقة لتحديد اتجاه القبلة.
+
+نظام تتبع الصلوات اليومية مع إضافة الصلوات المتروكة لقسم "الفائتة".
+
+عدّاد يوضّح إجمالي كل صلاة فائتة بشكل منفرد مع عرض الأيام التي لم تُصلَّ.
+
+إمكانية تحديد الصلوات الفائتة على أنها أُديت لتُضاف تلقائيًا لصلوات اليوم.
+![WhatsApp Image 2025-09-18 at 2 53 24 PM](https://github.com/user-attachments/assets/43d0bbd7-fa10-4e1d-8f58-27acb28f4b9d)
