@@ -211,8 +211,6 @@ class PrayerCubit extends Cubit<PrayerState> {
       await _loadCachedData();
     }
   }
-
-  // دالة لتعطيل وظائف الموقع
   void disableLocation() {
     emit(const PrayerError(message: 'تم تعطيل خدمات الموقع'));
   }

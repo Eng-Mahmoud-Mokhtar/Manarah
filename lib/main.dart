@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:device_preview/device_preview.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,7 +36,9 @@ void callbackDispatcher() {
 
         if (notificationsEnabled) {
           final randomAyah =
-          notificationMessages[Random().nextInt(notificationMessages.length)];
+          notificationMessages[Random().nextInt(
+            notificationMessages.length,
+          )];
 
           const AndroidNotificationDetails androidDetails =
           AndroidNotificationDetails(
@@ -50,8 +51,9 @@ void callbackDispatcher() {
             enableVibration: true,
           );
 
-          const NotificationDetails platformDetails =
-          NotificationDetails(android: androidDetails);
+          const NotificationDetails platformDetails = NotificationDetails(
+            android: androidDetails,
+          );
 
           await globalNotificationsPlugin.show(
             DateTime.now().millisecondsSinceEpoch ~/ 1000,
@@ -74,8 +76,7 @@ void callbackDispatcher() {
         final yesterStr = yesterday.toString().split(" ")[0];
         for (var prayer in prayers) {
           bool done = prefs.getBool("$yesterStr-$prayer") ?? false;
-          if (!done) {
-          }
+          if (!done) {}
         }
 
         final todayStr = DateTime.now().toString().split(" ")[0];
@@ -97,8 +98,9 @@ Future<void> initializeNotifications() async {
   const AndroidInitializationSettings androidInit =
   AndroidInitializationSettings('@mipmap/ic_launcher');
 
-  final InitializationSettings initSettings =
-  InitializationSettings(android: androidInit);
+  final InitializationSettings initSettings = InitializationSettings(
+    android: androidInit,
+  );
 
   await globalNotificationsPlugin.initialize(initSettings);
 
@@ -111,7 +113,8 @@ Future<void> initializeNotifications() async {
 
   await globalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin>()
+      AndroidFlutterLocalNotificationsPlugin
+  >()
       ?.createNotificationChannel(channel);
 }
 
@@ -131,10 +134,7 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final int? lastPage = prefs.getInt('last_page');
 
-  await Workmanager().initialize(
-    callbackDispatcher,
-    isInDebugMode: true,
-  );
+  await Workmanager().initialize(callbackDispatcher, isInDebugMode: true);
 
   await Workmanager().cancelAll();
 
@@ -162,12 +162,7 @@ void main() async {
     ),
   );
 
-  runApp(
-    DevicePreview(
-      enabled: false,
-      builder: (context) => MyApp(lastPage: lastPage),
-    ),
-  );
+  runApp(MyApp(lastPage: lastPage));
 }
 
 class MyApp extends StatelessWidget {
@@ -180,20 +175,16 @@ class MyApp extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => DateCubit()),
         BlocProvider(
-            create: (_) => BottomNavCubit(initialIndex: lastPage ?? 0)),
+          create: (_) => BottomNavCubit(initialIndex: lastPage ?? 0),
+        ),
         BlocProvider(create: (_) => PrayerCubit()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         useInheritedMediaQuery: true,
-        locale: DevicePreview.locale(context),
-        builder: (context, child) => DevicePreview.appBuilder(
-          context,
-          Directionality(
-            textDirection: TextDirection.rtl,
-            child: child!,
-          ),
-        ),
+        builder:
+            (context, child) =>
+            Directionality(textDirection: TextDirection.rtl, child: child!),
         theme: ThemeData(fontFamily: 'Almarai'),
         home: lastPage == null ? const SplashScreen() : const BottomBar(),
       ),

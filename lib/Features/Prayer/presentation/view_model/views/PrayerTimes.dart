@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_foreground_task/task_handler.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
@@ -35,7 +36,7 @@ class AdhanTaskHandler extends TaskHandler {
         }
       });
 
-      print('[INFO] الأذان الخلفية شغال بدون تايمر أمان');
+      print('[INFO] الأذان الخلفية شغال');
     } catch (e) {
       print('[ERROR] تشغيل الأذان في الخلفية: $e');
     }
@@ -48,12 +49,71 @@ class AdhanTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     await _player.stop();
     await _player.dispose();
+    Future.delayed(const Duration(seconds: 5), () {
+      FlutterForegroundTask.startService(
+        notificationTitle: 'خدمة الأذان تعمل الآن',
+        notificationText: 'مراقبة أوقات الصلاة',
+        callback: () {
+          FlutterForegroundTask.setTaskHandler(AdhanTaskHandler());
+        },
+      );
+      print('[INFO] إعادة تشغيل خدمة الأذان تلقائي بعد الإغلاق');
+    });
   }
 }
 
-/// دالة callback للتنبيه عند أوقات الصلاة
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+FlutterLocalNotificationsPlugin();
+
+Future<void> initializeNotifications() async {
+  const AndroidInitializationSettings initializationSettingsAndroid =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initializationSettings =
+  InitializationSettings(android: initializationSettingsAndroid);
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+}
+const Map<String, String> prayerNamesArabic = {
+  'Fajr': 'الفجر',
+  'Sunrise': 'الشروق',
+  'Dhuhr': 'الظهر',
+  'Asr': 'العصر',
+  'Maghrib': 'المغرب',
+  'Isha': 'العشاء',
+};
+
 @pragma('vm:entry-point')
-void adhanAlarmCallback() async {
+Future<void> sendNotificationCallback(int id, Map<String, dynamic> params) async {
+  String prayer = params['prayer'] ?? 'غير معروف';
+  String prayerArabic = prayerNamesArabic[prayer] ?? prayer;
+
+  try {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'adhan_channel',
+      'Adhan Notifications',
+      channelDescription: 'Notifications for prayer times',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: false,
+      ticker: 'وقت الصلاة',
+    );
+    const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.show(
+      id,
+      'صلاة $prayerArabic',
+      'الأذان بعد قليل، استعد للصلاة',
+      notificationDetails,
+    );
+    print('[NOTIFICATION] تم إرسال إشعار لصلاة $prayerArabic');
+  } catch (e) {
+    print('[ERROR] فشل إرسال الإشعار: $e');
+  }
+}
+
+
+@pragma('vm:entry-point')
+Future<void> adhanAlarmCallback(int id, Map<String, dynamic> params) async {
+  String prayer = params['prayer'] ?? 'غير معروف';
   final player = AudioPlayer();
   try {
     final tempDir = await getTemporaryDirectory();
@@ -65,8 +125,11 @@ void adhanAlarmCallback() async {
 
     await player.setFilePath(file.path);
     await player.play();
+    print('[ADHAN] تم تشغيل الأذان لصلاة $prayer');
   } catch (e) {
-    print('[ERROR] تشغيل الأذان: $e');
+    print('[ERROR] فشل تشغيل الأذان: $e');
+  } finally {
+    await player.dispose();
   }
 }
 
@@ -80,7 +143,6 @@ class PrayerTimes extends StatefulWidget {
 class _PrayerTimesState extends State<PrayerTimes> {
   SharedPreferences? _prefs;
   Timer? _prayerTimer;
-  Map<String, bool> _adhanPlayedToday = {};
   static String? adhanFilePathForeground;
   static AudioPlayer? _foregroundPlayer;
   Map<String, bool> _adhanEnabled = {
@@ -92,10 +154,40 @@ class _PrayerTimesState extends State<PrayerTimes> {
     'Isha': true,
   };
 
+  Map<String, bool> _adhanPlayedToday = {
+    'Fajr': false,
+    'Sunrise': false,
+    'Dhuhr': false,
+    'Asr': false,
+    'Maghrib': false,
+    'Isha': false,
+  };
+
+  static const Map<String, int> _prayerIds = {
+    'Fajr': 0,
+    'Sunrise': 1,
+    'Dhuhr': 2,
+    'Asr': 3,
+    'Maghrib': 4,
+    'Isha': 5,
+  };
+
   @override
   void initState() {
     super.initState();
     _initAll();
+
+    // تشغيل الخدمة الدائمة
+    FlutterForegroundTask.startService(
+      notificationTitle: 'خدمة الأذان تعمل الآن',
+      notificationText: 'مراقبة أوقات الصلاة',
+      callback: startCallback,
+    );
+  }
+
+  @pragma('vm:entry-point')
+  void startCallback() {
+    FlutterForegroundTask.setTaskHandler(AdhanTaskHandler());
   }
 
   Future<void> _initAll() async {
@@ -103,10 +195,10 @@ class _PrayerTimesState extends State<PrayerTimes> {
       _prefs = await SharedPreferences.getInstance();
       await _loadAdhanSettings();
       await _prepareAdhanFile();
-      await _loadCachedPrayerTimes(); // تحميل البيانات المخزنة أولًا
-      await _fetchNewPrayerTimes();   // محاولة تحديث الإنترنت
+      await _loadCachedPrayerTimes();
+      await _fetchNewPrayerTimes();
       _startPrayerChecker();
-      _resetAdhanFlagsDaily();
+      _startDailyResetTimer();
       await AndroidAlarmManager.initialize();
     } catch (e) {
       print('[ERROR] فشل تهيئة أوقات الصلاة: $e');
@@ -141,11 +233,9 @@ class _PrayerTimesState extends State<PrayerTimes> {
     });
     _saveAdhanSettings();
 
-    // إلغاء المنبهات للصلاة المعطلة
     if (!_adhanEnabled[prayer]!) {
       _cancelScheduledPrayer(prayer);
     } else {
-      // إعادة جدولة المنبهات للصلاة المفعلة
       final state = context.read<PrayerCubit>().state;
       if (state is PrayerLoaded) {
         _scheduleSinglePrayer(prayer, state.prayerTimes[prayer]!);
@@ -155,23 +245,22 @@ class _PrayerTimesState extends State<PrayerTimes> {
 
   Future<void> _cancelScheduledPrayer(String prayer) async {
     try {
-      final state = context.read<PrayerCubit>().state;
-      if (state is PrayerLoaded) {
-        final prayerIndex = state.prayerTimes.keys.toList().indexOf(prayer);
-        if (prayerIndex != -1) {
-          final now = DateTime.now();
-          int uniqueId = now.day * 10 + prayerIndex;
-          await AndroidAlarmManager.cancel(uniqueId);
-          print('[CANCELLED] تم إلغاء منبه الأذان لصلاة $prayer');
-        }
+      if (_prayerIds.containsKey(prayer)) {
+        int prayerId = _prayerIds[prayer]!;
+        int notificationId = prayerId + 100;
+        await AndroidAlarmManager.cancel(prayerId);
+        await AndroidAlarmManager.cancel(notificationId);
+        print('[CANCELLED] تم إلغاء منبه وإشعار الأذان لصلاة $prayer');
       }
     } catch (e) {
-      print('[ERROR] فشل إلغاء منبه الأذان: $e');
+      print('[ERROR] فشل إلغاء منبه الأذان أو الإشعار: $e');
     }
   }
 
   Future<void> _scheduleSinglePrayer(String prayer, String time) async {
     try {
+      if (!_prayerIds.containsKey(prayer)) return;
+
       final now = DateTime.now();
       final parts = time.split(':');
       if (parts.length != 2) return;
@@ -179,26 +268,57 @@ class _PrayerTimesState extends State<PrayerTimes> {
       final minute = int.tryParse(parts[1]);
       if (hour == null || minute == null) return;
 
-      DateTime prayerDateTime = DateTime(now.year, now.month, now.day, hour, minute);
+      DateTime prayerDateTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        hour,
+        minute,
+      );
       if (prayerDateTime.isBefore(now)) {
         prayerDateTime = prayerDateTime.add(const Duration(days: 1));
       }
 
-      final prayerIndex = context.read<PrayerCubit>().getPrayerIndex(prayer);
-      int uniqueId = now.day * 10 + prayerIndex;
+      // وقت الإشعار (قبل الصلاة بخمس دقائق)
+      DateTime notificationTime = prayerDateTime.subtract(const Duration(minutes: 3));
 
+      int prayerId = _prayerIds[prayer]!;
+      int notificationId = prayerId + 100; // معرف مختلف للإشعار
+
+      // إلغاء أي إشعارات أو أذانات مجدولة سابقًا
+      await AndroidAlarmManager.cancel(prayerId);
+      await AndroidAlarmManager.cancel(notificationId);
+
+      // جدولة الإشعار قبل خمس دقائق
+      await AndroidAlarmManager.oneShotAt(
+        notificationTime,
+        notificationId,
+        sendNotificationCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+        params: {'prayer': prayer},
+      );
+
+      // جدولة الأذان في وقت الصلاة
       await AndroidAlarmManager.oneShotAt(
         prayerDateTime,
-        uniqueId,
+        prayerId,
         adhanAlarmCallback,
         exact: true,
         wakeup: true,
         rescheduleOnReboot: true,
+        params: {'prayer': prayer},
       );
 
-      print('[RESCHEDULED] تمت إعادة جدولة منبه الأذان لصلاة $prayer في ${prayerDateTime.toLocal()}');
+      print(
+        '[SCHEDULED] تم جدولة إشعار $prayer في ${notificationTime.toLocal()} (ID: $notificationId)',
+      );
+      print(
+        '[SCHEDULED] تم جدولة أذان $prayer في ${prayerDateTime.toLocal()} (ID: $prayerId)',
+      );
     } catch (e) {
-      print('[ERROR] فشل إعادة جدولة منبه الأذان: $e');
+      print('[ERROR] فشل جدولة الإشعار أو الأذان: $e');
     }
   }
 
@@ -219,31 +339,9 @@ class _PrayerTimesState extends State<PrayerTimes> {
   }
 
   void scheduleAllPrayers(Map<String, String> prayerTimes) {
-    final now = DateTime.now();
-    int index = 0;
     prayerTimes.forEach((prayer, time) {
       if (_adhanEnabled[prayer] != true) return;
-      final parts = time.split(':');
-      if (parts.length != 2) return;
-      final hour = int.tryParse(parts[0]);
-      final minute = int.tryParse(parts[1]);
-      if (hour == null || minute == null) return;
-      DateTime prayerDateTime =
-      DateTime(now.year, now.month, now.day, hour, minute);
-      if (prayerDateTime.isBefore(now)) {
-        prayerDateTime = prayerDateTime.add(const Duration(days: 1));
-      }
-      int uniqueId = now.day * 10 + index;
-      AndroidAlarmManager.oneShotAt(
-        prayerDateTime,
-        uniqueId,
-        adhanAlarmCallback,
-        exact: true,
-        wakeup: true,
-        rescheduleOnReboot: true,
-      );
-      print('[SCHEDULED] $prayer في ${prayerDateTime.toLocal()}');
-      index++;
+      _scheduleSinglePrayer(prayer, time);
     });
   }
 
@@ -252,15 +350,14 @@ class _PrayerTimesState extends State<PrayerTimes> {
       final cachedData = _prefs?.getString('prayer_times_data');
       if (cachedData != null) {
         final Map<String, dynamic> data = json.decode(cachedData);
-        final Map<String, String> prayerTimes =
-        Map<String, String>.from(data['prayerTimes']);
+        final Map<String, String> prayerTimes = Map<String, String>.from(
+          data['prayerTimes'],
+        );
         final String city = data['city'];
         final String country = data['country'];
 
         if (mounted) {
-          context
-              .read<PrayerCubit>()
-              .setCachedData(prayerTimes, city, country);
+          context.read<PrayerCubit>().setCachedData(prayerTimes, city, country);
         }
         scheduleAllPrayers(prayerTimes);
       }
@@ -279,7 +376,6 @@ class _PrayerTimesState extends State<PrayerTimes> {
       }
     } catch (e) {
       print('[ERROR] فشل جلب أوقات الصلاة الجديدة: $e');
-      // عند فشل الإنترنت، تحميل البيانات المخزنة إذا موجودة
       await _loadCachedPrayerTimes();
     }
   }
@@ -294,10 +390,26 @@ class _PrayerTimesState extends State<PrayerTimes> {
         'date': DateTime.now().toIso8601String(),
       };
       await _prefs?.setString('prayer_times_data', json.encode(data));
-      print('[INFO] تم حفظ أوقات الصلاة مجدولة');
     } catch (e) {
       print('[ERROR] فشل تخزين أوقات الصلاة: $e');
     }
+  }
+
+  void _startDailyResetTimer() {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final durationUntilMidnight = tomorrow.difference(now);
+
+    Timer(durationUntilMidnight, () {
+      setState(() {
+        _adhanPlayedToday.updateAll((key, value) => false);
+      });
+      final state = context.read<PrayerCubit>().state;
+      if (state is PrayerLoaded) {
+        scheduleAllPrayers(state.prayerTimes);
+      }
+      _startDailyResetTimer();
+    });
   }
 
   void _startPrayerChecker() {
@@ -310,38 +422,33 @@ class _PrayerTimesState extends State<PrayerTimes> {
           for (var entry in state.prayerTimes.entries) {
             final prayer = entry.key;
             final time = entry.value;
+
             if (_adhanEnabled[prayer] != true) continue;
+
             final parts = time.split(':');
             if (parts.length != 2) continue;
             final hour = int.tryParse(parts[0]);
             final minute = int.tryParse(parts[1]);
             if (hour == null || minute == null) continue;
 
-            final prayerTime =
-            DateTime(now.year, now.month, now.day, hour, minute);
-            final adhanLeadTime = const Duration(minutes: 5);
-            final adhanTime = prayerTime.subtract(adhanLeadTime);
+            final prayerTime = DateTime(
+              now.year,
+              now.month,
+              now.day,
+              hour,
+              minute,
+            );
 
-            if (now.isAfter(adhanTime) &&
-                now.isBefore(prayerTime) &&
-                (_adhanPlayedToday[prayer] != true)) {
-              _playForegroundAdhan();
-              _adhanPlayedToday[prayer] = true;
+            // إذا كان الوقت قد فات، جدول الصلاة لليوم التالي
+            if (prayerTime.isBefore(now) && !_adhanPlayedToday[prayer]!) {
+              final nextPrayerTime = prayerTime.add(const Duration(days: 1));
+              _scheduleSinglePrayer(prayer, time);
             }
           }
         }
       } catch (e) {
-        print('[ERROR] خطأ في مراقبة أوقات الصلاة للواجهة: $e');
+        print('[ERROR] خطأ في مراقبة أوقات الصلاة: $e');
       }
-    });
-  }
-
-  void _resetAdhanFlagsDaily() {
-    final now = DateTime.now();
-    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
-    Timer(nextMidnight.difference(now), () {
-      _adhanPlayedToday.clear();
-      _resetAdhanFlagsDaily();
     });
   }
 
@@ -467,8 +574,9 @@ class _PrayerTimesState extends State<PrayerTimes> {
                         children: [
                           SizedBox(height: width * 0.04),
                           Padding(
-                            padding:
-                            EdgeInsets.symmetric(horizontal: width * 0.04),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: width * 0.04,
+                            ),
                             child: NextPrayerCountdownWithImage(
                               prayerTimes: state.prayerTimes,
                               fontBig: fontBig,
@@ -478,7 +586,9 @@ class _PrayerTimesState extends State<PrayerTimes> {
                           ),
                           Padding(
                             padding: EdgeInsets.symmetric(
-                                horizontal: width * 0.03, vertical: height * 0.01),
+                              horizontal: width * 0.03,
+                              vertical: height * 0.01,
+                            ),
                             child: PrayerTimesList(
                               context,
                               state,

@@ -61,7 +61,6 @@ class _QiblahState extends State<Qiblah> with WidgetsBindingObserver {
       _subscription = FlutterQiblah.qiblahStream.listen((dir) {
         if (mounted) {
           setState(() {
-            // فلترة بسيطة لتقليل الاهتزازات
             if (_direction == null ||
                 (dir.qiblah - _direction!.qiblah).abs() > 0.5) {
               _direction = dir;
